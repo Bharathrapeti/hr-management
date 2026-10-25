@@ -30,11 +30,11 @@ jobs:
 
       - name: Install dependencies
         run: npm install
-        working-directory: './artifacts/employee hr system'
+        working-directory: '${{ github.workspace }}/artifacts/employee hr system'
 
       - name: Build project
         run: npm run build
-        working-directory: './artifacts/employee hr system'
+        working-directory: '${{ github.workspace }}/artifacts/employee hr system'
         env:
           PORT: 3000
           BASE_PATH: /${{ github.event.repository.name }}/
