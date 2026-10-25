@@ -11,7 +11,8 @@ export type AuthUser = {
 export type AuthMessage = { message: string };
 
 export const authBaseUrl =
-  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) || 'http://localhost:8080';
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) ||
+  'https://hr-management-2-5b76.onrender.com';
 
 let inMemoryCsrfToken: string | null = null;
 let csrfInFlight: Promise<string | null> | null = null;
