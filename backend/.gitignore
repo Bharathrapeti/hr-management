@@ -1,0 +1,11 @@
+target/
+
+# Local environment and secret files
+.env
+.env.*
+!.env.example
+application-local.yml
+application-local.properties
+*.local.yml
+*.local.properties
+

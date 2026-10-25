@@ -1,0 +1,48 @@
+spring:
+  application:
+    name: employee-hr-auth
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+  mail:
+    host: ${SMTP_HOST:}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+      mail.smtp.starttls.required: true
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000
+      mail.smtp.quitwait: false
+
+server:
+  port: ${SERVER_PORT:8080}
+  servlet:
+    session:
+      cookie:
+        http-only: true
+        secure: ${SESSION_COOKIE_SECURE:false}
+        same-site: lax
+
+app:
+  frontend-origin: ${APP_FRONTEND_ORIGIN:http://localhost:20453}
+  auth:
+    session-ttl: ${AUTH_SESSION_TTL:PT8H}
+    otp-ttl: ${AUTH_OTP_TTL:PT10M}
+    otp-max-attempts: ${AUTH_OTP_MAX_ATTEMPTS:5}
+    otp-resend-seconds: ${AUTH_OTP_RESEND_SECONDS:60}
+    otp-max-requests-per-hour: ${AUTH_OTP_MAX_REQUESTS_PER_HOUR:5}
+    mail-from: ${AUTH_MAIL_FROM:}
+    session-cookie-secure: ${SESSION_COOKIE_SECURE:false}
+    bootstrap-hr-enabled: ${AUTH_BOOTSTRAP_HR_ENABLED:false}
+    bootstrap-hr-name: ${AUTH_BOOTSTRAP_HR_NAME:}
+    bootstrap-hr-email: ${AUTH_BOOTSTRAP_HR_EMAIL:}
+    bootstrap-hr-password: ${AUTH_BOOTSTRAP_HR_PASSWORD:}
