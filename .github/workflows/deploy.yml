@@ -30,9 +30,11 @@ jobs:
 
       - name: Install dependencies
         run: npm install
+        working-directory: .
 
       - name: Build project
         run: npm run build
+        working-directory: .
         env:
           PORT: 3000
           BASE_PATH: /${{ github.event.repository.name }}/
