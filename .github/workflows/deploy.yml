@@ -30,11 +30,11 @@ jobs:
 
       - name: Install dependencies
         run: npm install
-        working-directory: .
+        working-directory: './artifacts/employee hr system'
 
       - name: Build project
         run: npm run build
-        working-directory: .
+        working-directory: './artifacts/employee hr system'
         env:
           PORT: 3000
           BASE_PATH: /${{ github.event.repository.name }}/
@@ -46,7 +46,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: './dist/public'
+          path: './artifacts/employee hr system/dist/public'
 
       - name: Deploy to GitHub Pages
         id: deployment
