@@ -8,6 +8,7 @@ import java.time.LocalDate;
 import java.time.Period;
 import java.util.List;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.jdbc.BadSqlGrammarException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -57,28 +58,71 @@ public class HrManagementService {
     }
 
     public PersonalDetailsView getPersonalDetails(long userId) {
+        try {
+            var list = jdbc.query(
+                    "SELECT user_id, employee_id, name, email, gender, date_of_birth, residential_address, mobile_number, role, status FROM users WHERE user_id = ?",
+                    (rs, row) -> {
+                        java.sql.Date dob = rs.getDate(6);
+                        LocalDate localDob = dob != null ? dob.toLocalDate() : null;
+                        Integer age = localDob != null ? Period.between(localDob, LocalDate.now()).getYears() : null;
+                        return new PersonalDetailsView(
+                                rs.getLong(1),
+                                rs.getString(2),
+                                rs.getString(3),
+                                rs.getString(4),
+                                rs.getString(5),
+                                localDob,
+                                age,
+                                rs.getString(7),
+                                rs.getString(8),
+                                rs.getString(9),
+                                rs.getString(10)
+                        );
+                    }, userId);
+            if (list.isEmpty()) throw new IllegalArgumentException("User not found.");
+            return list.getFirst();
+        } catch (BadSqlGrammarException ex) {
+            if (isMissingColumnError(ex, "gender")
+                    || isMissingColumnError(ex, "date_of_birth")
+                    || isMissingColumnError(ex, "residential_address")
+                    || isMissingColumnError(ex, "mobile_number")) {
+                return fallbackPersonalDetails(userId);
+            }
+            throw ex;
+        }
+    }
+
+    private PersonalDetailsView fallbackPersonalDetails(long userId) {
         var list = jdbc.query(
-                "SELECT user_id, employee_id, name, email, gender, date_of_birth, residential_address, mobile_number, role, status FROM users WHERE user_id = ?",
-                (rs, row) -> {
-                    java.sql.Date dob = rs.getDate(6);
-                    LocalDate localDob = dob != null ? dob.toLocalDate() : null;
-                    Integer age = localDob != null ? Period.between(localDob, LocalDate.now()).getYears() : null;
-                    return new PersonalDetailsView(
-                            rs.getLong(1),
-                            rs.getString(2),
-                            rs.getString(3),
-                            rs.getString(4),
-                            rs.getString(5),
-                            localDob,
-                            age,
-                            rs.getString(7),
-                            rs.getString(8),
-                            rs.getString(9),
-                            rs.getString(10)
-                    );
-                }, userId);
+                "SELECT user_id, employee_id, name, email, role, status FROM users WHERE user_id = ?",
+                (rs, row) -> new PersonalDetailsView(
+                        rs.getLong(1),
+                        rs.getString(2),
+                        rs.getString(3),
+                        rs.getString(4),
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        rs.getString(5),
+                        rs.getString(6)
+                ), userId);
         if (list.isEmpty()) throw new IllegalArgumentException("User not found.");
         return list.getFirst();
+    }
+
+    public static String normalizeGender(String rawGender) {
+        if (rawGender == null || rawGender.isBlank()) {
+            return null;
+        }
+        String normalized = rawGender.trim().toUpperCase()
+                .replace('-', '_')
+                .replaceAll("\\s+", "_");
+        if (!List.of("MALE", "FEMALE", "NON_BINARY", "PREFER_NOT_TO_SAY", "OTHER").contains(normalized)) {
+            throw new IllegalArgumentException("Gender value is invalid.");
+        }
+        return normalized;
     }
 
     @Transactional
@@ -99,10 +143,7 @@ public class HrManagementService {
                 throw new IllegalArgumentException("Mobile number format is invalid.");
             }
         }
-        String cleanGender = (gender != null && !gender.isBlank()) ? gender.trim().toUpperCase() : null;
-        if (cleanGender != null && !List.of("MALE", "FEMALE", "NON_BINARY", "PREFER_NOT_TO_SAY", "OTHER").contains(cleanGender)) {
-            throw new IllegalArgumentException("Gender value is invalid.");
-        }
+        String cleanGender = normalizeGender(gender);
 
         jdbc.update(
                 "UPDATE users SET name = ?, gender = ?, date_of_birth = ?, residential_address = ?, mobile_number = ?, updated_at = UTC_TIMESTAMP() WHERE user_id = ?",
@@ -147,41 +188,80 @@ public class HrManagementService {
     }
 
     public List<RegistrationView> registrations() {
+        try {
+            return jdbc.query("""
+                    SELECT u.user_id, u.name, u.email, u.role, u.status, u.created_at, u.email_verified_at,
+                           u.reviewed_by_hr_user_id, r.name, u.reviewed_at, u.review_reason,
+                           u.assigned_manager_user_id, m.name,
+                           CASE
+                               WHEN u.status <> 'PENDING_APPROVAL' THEN FALSE
+                               WHEN u.assigned_manager_user_id IS NULL THEN TRUE
+                               WHEN m.status <> 'ACTIVE' THEN TRUE
+                               WHEN (SELECT COUNT(*) FROM manager_access_requests mar WHERE mar.requesting_user_id = u.assigned_manager_user_id AND mar.status = 'APPROVED') = 0 THEN TRUE
+                               ELSE FALSE
+                           END AS needs_hr_review
+                    FROM users u
+                    LEFT JOIN users r ON r.user_id = u.reviewed_by_hr_user_id
+                    LEFT JOIN users m ON m.user_id = u.assigned_manager_user_id
+                    WHERE u.role = 'EMPLOYEE'
+                    ORDER BY
+                        CASE WHEN u.status = 'PENDING_APPROVAL' THEN 1 ELSE 2 END,
+                        u.created_at DESC
+                    """,
+                    (rs, row) -> new RegistrationView(
+                            rs.getLong(1),
+                            rs.getString(2),
+                            rs.getString(3),
+                            rs.getString(4),
+                            rs.getString(5),
+                            rs.getTimestamp(6) != null ? rs.getTimestamp(6).toInstant() : null,
+                            rs.getTimestamp(7) != null ? rs.getTimestamp(7).toInstant() : null,
+                            rs.getObject(8) != null ? rs.getLong(8) : null,
+                            rs.getString(9),
+                            rs.getTimestamp(10) != null ? rs.getTimestamp(10).toInstant() : null,
+                            rs.getString(11),
+                            rs.getObject(12) != null ? rs.getLong(12) : null,
+                            rs.getString(13),
+                            rs.getBoolean(14)
+                    ));
+        } catch (BadSqlGrammarException ex) {
+            if (isMissingColumnError(ex, "assigned_manager_user_id")) {
+                return fallbackRegistrations();
+            }
+            throw ex;
+        }
+    }
+
+    private List<RegistrationView> fallbackRegistrations() {
         return jdbc.query("""
                 SELECT u.user_id, u.name, u.email, u.role, u.status, u.created_at, u.email_verified_at,
-                       u.reviewed_by_hr_user_id, r.name, u.reviewed_at, u.review_reason,
-                       u.assigned_manager_user_id, m.name,
-                       CASE
-                           WHEN u.status <> 'PENDING_APPROVAL' THEN FALSE
-                           WHEN u.assigned_manager_user_id IS NULL THEN TRUE
-                           WHEN m.status <> 'ACTIVE' THEN TRUE
-                           WHEN (SELECT COUNT(*) FROM manager_access_requests mar WHERE mar.requesting_user_id = u.assigned_manager_user_id AND mar.status = 'APPROVED') = 0 THEN TRUE
-                           ELSE FALSE
-                       END AS needs_hr_review
+                       u.reviewed_by_hr_user_id, r.name, u.reviewed_at, u.review_reason
                 FROM users u
                 LEFT JOIN users r ON r.user_id = u.reviewed_by_hr_user_id
-                LEFT JOIN users m ON m.user_id = u.assigned_manager_user_id
                 WHERE u.role = 'EMPLOYEE'
                 ORDER BY
                     CASE WHEN u.status = 'PENDING_APPROVAL' THEN 1 ELSE 2 END,
                     u.created_at DESC
                 """,
-                (rs, row) -> new RegistrationView(
-                        rs.getLong(1),
-                        rs.getString(2),
-                        rs.getString(3),
-                        rs.getString(4),
-                        rs.getString(5),
-                        rs.getTimestamp(6) != null ? rs.getTimestamp(6).toInstant() : null,
-                        rs.getTimestamp(7) != null ? rs.getTimestamp(7).toInstant() : null,
-                        rs.getObject(8) != null ? rs.getLong(8) : null,
-                        rs.getString(9),
-                        rs.getTimestamp(10) != null ? rs.getTimestamp(10).toInstant() : null,
-                        rs.getString(11),
-                        rs.getObject(12) != null ? rs.getLong(12) : null,
-                        rs.getString(13),
-                        rs.getBoolean(14)
-                ));
+                (rs, row) -> {
+                    String status = rs.getString(5);
+                    return new RegistrationView(
+                            rs.getLong(1),
+                            rs.getString(2),
+                            rs.getString(3),
+                            rs.getString(4),
+                            status,
+                            rs.getTimestamp(6) != null ? rs.getTimestamp(6).toInstant() : null,
+                            rs.getTimestamp(7) != null ? rs.getTimestamp(7).toInstant() : null,
+                            rs.getObject(8) != null ? rs.getLong(8) : null,
+                            rs.getString(9),
+                            rs.getTimestamp(10) != null ? rs.getTimestamp(10).toInstant() : null,
+                            rs.getString(11),
+                            null,
+                            null,
+                            "PENDING_APPROVAL".equals(status)
+                    );
+                });
     }
 
     @Transactional
@@ -276,46 +356,60 @@ public class HrManagementService {
     }
 
     public List<CorrectionRequestView> employeeCorrectionRequests(long employeeUserId) {
-        return jdbc.query("""
-                SELECT c.request_id, c.employee_user_id, u.name, u.email, c.requested_changes, c.status,
-                       c.created_at, c.resolved_by_hr_user_id, r.name, c.resolved_at, c.resolution_note
-                FROM employee_correction_requests c
-                JOIN users u ON u.user_id = c.employee_user_id
-                LEFT JOIN users r ON r.user_id = c.resolved_by_hr_user_id
-                WHERE c.employee_user_id = ?
-                ORDER BY c.created_at DESC
-                """,
-                (rs, row) -> new CorrectionRequestView(
-                        rs.getLong(1), rs.getLong(2), rs.getString(3), rs.getString(4),
-                        rs.getString(5), rs.getString(6),
-                        rs.getTimestamp(7) != null ? rs.getTimestamp(7).toInstant() : null,
-                        rs.getObject(8) != null ? rs.getLong(8) : null,
-                        rs.getString(9),
-                        rs.getTimestamp(10) != null ? rs.getTimestamp(10).toInstant() : null,
-                        rs.getString(11)
-                ), employeeUserId);
+        try {
+            return jdbc.query("""
+                    SELECT c.request_id, c.employee_user_id, u.name, u.email, c.requested_changes, c.status,
+                           c.created_at, c.resolved_by_hr_user_id, r.name, c.resolved_at, c.resolution_note
+                    FROM employee_correction_requests c
+                    JOIN users u ON u.user_id = c.employee_user_id
+                    LEFT JOIN users r ON r.user_id = c.resolved_by_hr_user_id
+                    WHERE c.employee_user_id = ?
+                    ORDER BY c.created_at DESC
+                    """,
+                    (rs, row) -> new CorrectionRequestView(
+                            rs.getLong(1), rs.getLong(2), rs.getString(3), rs.getString(4),
+                            rs.getString(5), rs.getString(6),
+                            rs.getTimestamp(7) != null ? rs.getTimestamp(7).toInstant() : null,
+                            rs.getObject(8) != null ? rs.getLong(8) : null,
+                            rs.getString(9),
+                            rs.getTimestamp(10) != null ? rs.getTimestamp(10).toInstant() : null,
+                            rs.getString(11)
+                    ), employeeUserId);
+        } catch (BadSqlGrammarException ex) {
+            if (isMissingTableError(ex, "employee_correction_requests")) {
+                return List.of();
+            }
+            throw ex;
+        }
     }
 
     public List<CorrectionRequestView> allCorrectionRequests() {
-        return jdbc.query("""
-                SELECT c.request_id, c.employee_user_id, u.name, u.email, c.requested_changes, c.status,
-                       c.created_at, c.resolved_by_hr_user_id, r.name, c.resolved_at, c.resolution_note
-                FROM employee_correction_requests c
-                JOIN users u ON u.user_id = c.employee_user_id
-                LEFT JOIN users r ON r.user_id = c.resolved_by_hr_user_id
-                ORDER BY
-                    CASE WHEN c.status = 'PENDING' THEN 1 ELSE 2 END,
-                    c.created_at DESC
-                """,
-                (rs, row) -> new CorrectionRequestView(
-                        rs.getLong(1), rs.getLong(2), rs.getString(3), rs.getString(4),
-                        rs.getString(5), rs.getString(6),
-                        rs.getTimestamp(7) != null ? rs.getTimestamp(7).toInstant() : null,
-                        rs.getObject(8) != null ? rs.getLong(8) : null,
-                        rs.getString(9),
-                        rs.getTimestamp(10) != null ? rs.getTimestamp(10).toInstant() : null,
-                        rs.getString(11)
-                ));
+        try {
+            return jdbc.query("""
+                    SELECT c.request_id, c.employee_user_id, u.name, u.email, c.requested_changes, c.status,
+                           c.created_at, c.resolved_by_hr_user_id, r.name, c.resolved_at, c.resolution_note
+                    FROM employee_correction_requests c
+                    JOIN users u ON u.user_id = c.employee_user_id
+                    LEFT JOIN users r ON r.user_id = c.resolved_by_hr_user_id
+                    ORDER BY
+                        CASE WHEN c.status = 'PENDING' THEN 1 ELSE 2 END,
+                        c.created_at DESC
+                    """,
+                    (rs, row) -> new CorrectionRequestView(
+                            rs.getLong(1), rs.getLong(2), rs.getString(3), rs.getString(4),
+                            rs.getString(5), rs.getString(6),
+                            rs.getTimestamp(7) != null ? rs.getTimestamp(7).toInstant() : null,
+                            rs.getObject(8) != null ? rs.getLong(8) : null,
+                            rs.getString(9),
+                            rs.getTimestamp(10) != null ? rs.getTimestamp(10).toInstant() : null,
+                            rs.getString(11)
+                    ));
+        } catch (BadSqlGrammarException ex) {
+            if (isMissingTableError(ex, "employee_correction_requests")) {
+                return List.of();
+            }
+            throw ex;
+        }
     }
 
     @Transactional
@@ -480,6 +574,37 @@ public class HrManagementService {
 
     private void ensureApprovedManager(long userId) {
         if (!managerAccessService.isApprovedManager(userId)) throw new IllegalArgumentException("Manager access is not approved.");
+    }
+
+    static boolean isMissingColumnError(BadSqlGrammarException ex, String columnName) {
+        if (ex == null) {
+            return false;
+        }
+        java.sql.SQLException sqlEx = ex.getSQLException();
+        if (sqlEx != null) {
+            if (sqlEx.getErrorCode() == 1054 || "42S22".equalsIgnoreCase(sqlEx.getSQLState())) {
+                String sqlMsg = sqlEx.getMessage();
+                return sqlMsg == null || sqlMsg.toLowerCase().contains(columnName.toLowerCase());
+            }
+        }
+        String msg = ex.getMessage();
+        return msg != null && msg.toLowerCase().contains("column") && msg.toLowerCase().contains(columnName.toLowerCase());
+    }
+
+    static boolean isMissingTableError(BadSqlGrammarException ex, String tableName) {
+        if (ex == null) {
+            return false;
+        }
+        java.sql.SQLException sqlEx = ex.getSQLException();
+        if (sqlEx != null) {
+            if (sqlEx.getErrorCode() == 1146 || "42S02".equalsIgnoreCase(sqlEx.getSQLState())) {
+                String sqlMsg = sqlEx.getMessage();
+                return sqlMsg == null || sqlMsg.toLowerCase().contains(tableName.toLowerCase());
+            }
+        }
+        String msg = ex.getMessage();
+        return msg != null && (msg.toLowerCase().contains("table") || msg.toLowerCase().contains("not found"))
+                && msg.toLowerCase().contains(tableName.toLowerCase());
     }
 
     public record UserView(long id, String name, String email, String role, String status, String employeeId) {}

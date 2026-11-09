@@ -93,6 +93,160 @@ class PersonalDetailsAndManagerApprovalTest {
     }
 
     @Test
+    void updatePersonalDetailsNormalizesMale() {
+        mockHrUser(1L, true);
+        when(jdbc.query(contains("SELECT user_id, name, email, role, status, employee_id FROM users WHERE user_id = ?"),
+                any(RowMapper.class), eq(10L)))
+                .thenReturn(List.of(new HrManagementService.UserView(10L, "Emp", "emp@example.com", "EMPLOYEE", "ACTIVE", "EMP-10")));
+
+        LocalDate dob = LocalDate.of(1995, 3, 20);
+        hrService.updatePersonalDetails(10L, "Emp", "Male", dob, "Address", "+1234567890", 1L);
+        verify(jdbc).update(contains("UPDATE users SET name = ?, gender = ?"),
+                eq("Emp"), eq("MALE"), eq(java.sql.Date.valueOf(dob)), eq("Address"), eq("+1234567890"), eq(10L));
+    }
+
+    @Test
+    void updatePersonalDetailsNormalizesFemale() {
+        mockHrUser(1L, true);
+        when(jdbc.query(contains("SELECT user_id, name, email, role, status, employee_id FROM users WHERE user_id = ?"),
+                any(RowMapper.class), eq(10L)))
+                .thenReturn(List.of(new HrManagementService.UserView(10L, "Emp", "emp@example.com", "EMPLOYEE", "ACTIVE", "EMP-10")));
+
+        LocalDate dob = LocalDate.of(1995, 3, 20);
+        hrService.updatePersonalDetails(10L, "Emp", "Female", dob, "Address", "+1234567890", 1L);
+        verify(jdbc).update(contains("UPDATE users SET name = ?, gender = ?"),
+                eq("Emp"), eq("FEMALE"), eq(java.sql.Date.valueOf(dob)), eq("Address"), eq("+1234567890"), eq(10L));
+    }
+
+    @Test
+    void updatePersonalDetailsNormalizesNonBinaryWithHyphen() {
+        mockHrUser(1L, true);
+        when(jdbc.query(contains("SELECT user_id, name, email, role, status, employee_id FROM users WHERE user_id = ?"),
+                any(RowMapper.class), eq(10L)))
+                .thenReturn(List.of(new HrManagementService.UserView(10L, "Emp", "emp@example.com", "EMPLOYEE", "ACTIVE", "EMP-10")));
+
+        LocalDate dob = LocalDate.of(1995, 3, 20);
+        hrService.updatePersonalDetails(10L, "Emp", "Non-binary", dob, "Address", "+1234567890", 1L);
+        verify(jdbc).update(contains("UPDATE users SET name = ?, gender = ?"),
+                eq("Emp"), eq("NON_BINARY"), eq(java.sql.Date.valueOf(dob)), eq("Address"), eq("+1234567890"), eq(10L));
+    }
+
+    @Test
+    void updatePersonalDetailsNormalizesNonBinaryWithUnderscoreAndLowercase() {
+        mockHrUser(1L, true);
+        when(jdbc.query(contains("SELECT user_id, name, email, role, status, employee_id FROM users WHERE user_id = ?"),
+                any(RowMapper.class), eq(10L)))
+                .thenReturn(List.of(new HrManagementService.UserView(10L, "Emp", "emp@example.com", "EMPLOYEE", "ACTIVE", "EMP-10")));
+
+        LocalDate dob = LocalDate.of(1995, 3, 20);
+        hrService.updatePersonalDetails(10L, "Emp", "  non_binary  ", dob, "Address", "+1234567890", 1L);
+        verify(jdbc).update(contains("UPDATE users SET name = ?, gender = ?"),
+                eq("Emp"), eq("NON_BINARY"), eq(java.sql.Date.valueOf(dob)), eq("Address"), eq("+1234567890"), eq(10L));
+    }
+
+    @Test
+    void updatePersonalDetailsNormalizesPreferNotToSayWithSpaces() {
+        mockHrUser(1L, true);
+        when(jdbc.query(contains("SELECT user_id, name, email, role, status, employee_id FROM users WHERE user_id = ?"),
+                any(RowMapper.class), eq(10L)))
+                .thenReturn(List.of(new HrManagementService.UserView(10L, "Emp", "emp@example.com", "EMPLOYEE", "ACTIVE", "EMP-10")));
+
+        LocalDate dob = LocalDate.of(1995, 3, 20);
+        hrService.updatePersonalDetails(10L, "Emp", "Prefer not to say", dob, "Address", "+1234567890", 1L);
+        verify(jdbc).update(contains("UPDATE users SET name = ?, gender = ?"),
+                eq("Emp"), eq("PREFER_NOT_TO_SAY"), eq(java.sql.Date.valueOf(dob)), eq("Address"), eq("+1234567890"), eq(10L));
+    }
+
+    @Test
+    void updatePersonalDetailsNormalizesPreferNotToSayWithUnderscoresAndCase() {
+        mockHrUser(1L, true);
+        when(jdbc.query(contains("SELECT user_id, name, email, role, status, employee_id FROM users WHERE user_id = ?"),
+                any(RowMapper.class), eq(10L)))
+                .thenReturn(List.of(new HrManagementService.UserView(10L, "Emp", "emp@example.com", "EMPLOYEE", "ACTIVE", "EMP-10")));
+
+        LocalDate dob = LocalDate.of(1995, 3, 20);
+        hrService.updatePersonalDetails(10L, "Emp", "prefer_not_to_say", dob, "Address", "+1234567890", 1L);
+        verify(jdbc).update(contains("UPDATE users SET name = ?, gender = ?"),
+                eq("Emp"), eq("PREFER_NOT_TO_SAY"), eq(java.sql.Date.valueOf(dob)), eq("Address"), eq("+1234567890"), eq(10L));
+    }
+
+    @Test
+    void updatePersonalDetailsNormalizesOther() {
+        mockHrUser(1L, true);
+        when(jdbc.query(contains("SELECT user_id, name, email, role, status, employee_id FROM users WHERE user_id = ?"),
+                any(RowMapper.class), eq(10L)))
+                .thenReturn(List.of(new HrManagementService.UserView(10L, "Emp", "emp@example.com", "EMPLOYEE", "ACTIVE", "EMP-10")));
+
+        LocalDate dob = LocalDate.of(1995, 3, 20);
+        hrService.updatePersonalDetails(10L, "Emp", "Other", dob, "Address", "+1234567890", 1L);
+        verify(jdbc).update(contains("UPDATE users SET name = ?, gender = ?"),
+                eq("Emp"), eq("OTHER"), eq(java.sql.Date.valueOf(dob)), eq("Address"), eq("+1234567890"), eq(10L));
+    }
+
+    @Test
+    void updatePersonalDetailsNormalizesPreCanonicalTokens() {
+        mockHrUser(1L, true);
+        when(jdbc.query(contains("SELECT user_id, name, email, role, status, employee_id FROM users WHERE user_id = ?"),
+                any(RowMapper.class), eq(10L)))
+                .thenReturn(List.of(new HrManagementService.UserView(10L, "Emp", "emp@example.com", "EMPLOYEE", "ACTIVE", "EMP-10")));
+
+        LocalDate dob = LocalDate.of(1995, 3, 20);
+        hrService.updatePersonalDetails(10L, "Emp", "NON_BINARY", dob, "Address", "+1234567890", 1L);
+        verify(jdbc).update(contains("UPDATE users SET name = ?, gender = ?"),
+                eq("Emp"), eq("NON_BINARY"), eq(java.sql.Date.valueOf(dob)), eq("Address"), eq("+1234567890"), eq(10L));
+    }
+
+    @Test
+    void updatePersonalDetailsAllowsNullGender() {
+        mockHrUser(1L, true);
+        when(jdbc.query(contains("SELECT user_id, name, email, role, status, employee_id FROM users WHERE user_id = ?"),
+                any(RowMapper.class), eq(10L)))
+                .thenReturn(List.of(new HrManagementService.UserView(10L, "Emp", "emp@example.com", "EMPLOYEE", "ACTIVE", "EMP-10")));
+
+        LocalDate dob = LocalDate.of(1995, 3, 20);
+        hrService.updatePersonalDetails(10L, "Emp", null, dob, "Address", "+1234567890", 1L);
+        verify(jdbc).update(contains("UPDATE users SET name = ?, gender = ?"),
+                eq("Emp"), eq((String) null), eq(java.sql.Date.valueOf(dob)), eq("Address"), eq("+1234567890"), eq(10L));
+    }
+
+    @Test
+    void updatePersonalDetailsAllowsBlankGender() {
+        mockHrUser(1L, true);
+        when(jdbc.query(contains("SELECT user_id, name, email, role, status, employee_id FROM users WHERE user_id = ?"),
+                any(RowMapper.class), eq(10L)))
+                .thenReturn(List.of(new HrManagementService.UserView(10L, "Emp", "emp@example.com", "EMPLOYEE", "ACTIVE", "EMP-10")));
+
+        LocalDate dob = LocalDate.of(1995, 3, 20);
+        hrService.updatePersonalDetails(10L, "Emp", "   ", dob, "Address", "+1234567890", 1L);
+        verify(jdbc).update(contains("UPDATE users SET name = ?, gender = ?"),
+                eq("Emp"), eq((String) null), eq(java.sql.Date.valueOf(dob)), eq("Address"), eq("+1234567890"), eq(10L));
+    }
+
+    @Test
+    void updatePersonalDetailsRejectsInvalidGenderValues() {
+        mockHrUser(1L, true);
+        when(jdbc.query(contains("SELECT user_id, name, email, role, status, employee_id FROM users WHERE user_id = ?"),
+                any(RowMapper.class), eq(10L)))
+                .thenReturn(List.of(new HrManagementService.UserView(10L, "Emp", "emp@example.com", "EMPLOYEE", "ACTIVE", "EMP-10")));
+
+        LocalDate dob = LocalDate.of(1995, 3, 20);
+
+        assertThatThrownBy(() -> hrService.updatePersonalDetails(10L, "Emp", "unknown", dob, "Address", "+1234567890", 1L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Gender value is invalid.");
+
+        assertThatThrownBy(() -> hrService.updatePersonalDetails(10L, "Emp", "123", dob, "Address", "+1234567890", 1L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Gender value is invalid.");
+
+        assertThatThrownBy(() -> hrService.updatePersonalDetails(10L, "Emp", "MALE_EXTRA", dob, "Address", "+1234567890", 1L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Gender value is invalid.");
+
+        verify(jdbc, never()).update(contains("UPDATE users SET name = ?, gender = ?"), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
     void updatePersonalDetailsRejectsFutureDateOfBirth() {
         mockHrUser(1L, true);
         when(jdbc.query(contains("SELECT user_id, name, email, role, status, employee_id FROM users WHERE user_id = ?"),

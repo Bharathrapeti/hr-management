@@ -25,10 +25,6 @@ public class ManagerAccessService {
         this.emailService = emailService;
     }
 
-    public ManagerAccessService(JdbcTemplate jdbc) {
-        this(jdbc, null);
-    }
-
     public boolean isApprovedManager(long userId) {
         Integer count = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM manager_access_requests r JOIN users u ON u.user_id = r.requesting_user_id " +

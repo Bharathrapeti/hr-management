@@ -124,6 +124,38 @@ test('CSRF lifecycle and synchronization regression tests', async (t) => {
     assert.equal(capturedHeader, null);
   });
 
+  await t.test('mutating request automatically fetches CSRF token if in-memory token is absent', async () => {
+    resetCsrfState();
+    let csrfFetched = false;
+    let mutationHeader: string | null = null;
+
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      const path = url.toString();
+      if (path.endsWith('/api/auth/csrf')) {
+        csrfFetched = true;
+        return new Response(
+          JSON.stringify({ token: 'auto-fetched-token-999' }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (path.endsWith('/api/test-mutation')) {
+        const headers = new Headers(init?.headers);
+        mutationHeader = headers.get('X-XSRF-TOKEN');
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      throw new Error(`Unexpected url: ${path}`);
+    }) as typeof fetch;
+
+    const res = await authRequest<{ ok: boolean }>('/api/test-mutation', { method: 'POST', body: '{}' });
+    assert.equal(res.ok, true);
+    assert.equal(csrfFetched, true, 'Must have auto-fetched CSRF token before mutating request');
+    assert.equal(mutationHeader, 'auto-fetched-token-999', 'Must attach auto-fetched CSRF token');
+    assert.equal(getInMemoryCsrfToken(), 'auto-fetched-token-999');
+  });
+
   await t.test('login with retryOnCsrf=true retries once on confirmed CSRF 403', async () => {
     let attempt = 0;
     setInMemoryCsrfToken('stale-token');
@@ -367,5 +399,70 @@ test('CSRF lifecycle and synchronization regression tests', async (t) => {
       body: JSON.stringify({ managerUserId: 50 }),
     });
     assert.equal(managerAssigned, true);
+  });
+
+  await t.test('error classification: GET 403 reports authorization failure, not CSRF', async () => {
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const path = url.toString();
+      if (path.endsWith('/api/hr/employee-registrations')) {
+        return new Response('', { status: 403 });
+      }
+      throw new Error(`Unexpected url: ${path}`);
+    }) as typeof fetch;
+
+    await assert.rejects(
+      async () => {
+        await authRequest('/api/hr/employee-registrations', { method: 'GET' });
+      },
+      (err: Error) => {
+        assert.equal(err.message, 'You do not have permission to perform this action.');
+        assert.doesNotMatch(err.message, /Security validation failed/);
+        return true;
+      }
+    );
+  });
+
+  await t.test('error classification: 401 reports authentication required or session expired', async () => {
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const path = url.toString();
+      if (path.endsWith('/api/auth/me')) {
+        return new Response('', { status: 401 });
+      }
+      throw new Error(`Unexpected url: ${path}`);
+    }) as typeof fetch;
+
+    await assert.rejects(
+      async () => {
+        await authRequest('/api/auth/me', { method: 'GET' });
+      },
+      (err: Error) => {
+        assert.equal(err.message, 'Authentication is required or the session is no longer valid. Please sign in again.');
+        return true;
+      }
+    );
+  });
+
+  await t.test('error classification: preserves backend application errors (e.g. pending approval, invalid credentials)', async () => {
+    setInMemoryCsrfToken('mock-csrf-token');
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const path = url.toString();
+      if (path.endsWith('/api/auth/login')) {
+        return new Response(
+          JSON.stringify({ error: 'Your account is pending HR administrator approval.' }),
+          { status: 400, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      throw new Error(`Unexpected url: ${path}`);
+    }) as typeof fetch;
+
+    await assert.rejects(
+      async () => {
+        await authRequest('/api/auth/login', { method: 'POST', body: '{}' });
+      },
+      (err: Error) => {
+        assert.equal(err.message, 'Your account is pending HR administrator approval.');
+        return true;
+      }
+    );
   });
 });

@@ -11,8 +11,7 @@ export type AuthUser = {
 export type AuthMessage = { message: string };
 
 export const authBaseUrl =
-  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) ||
-  'https://hr-management-2-5b76.onrender.com';
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) || 'http://localhost:8080';
 
 let inMemoryCsrfToken: string | null = null;
 let csrfInFlight: Promise<string | null> | null = null;
@@ -67,7 +66,10 @@ export async function authRequest<T>(
   if (options.body) headers.set('Content-Type', 'application/json');
 
   if (method !== 'GET') {
-    const token = inMemoryCsrfToken || csrfCookie();
+    let token = inMemoryCsrfToken || csrfCookie();
+    if (!token && path !== '/api/auth/csrf') {
+      token = (await ensureCsrf()) || undefined;
+    }
     if (token) headers.set('X-XSRF-TOKEN', decodeURIComponent(token));
   }
 
@@ -82,12 +84,22 @@ export async function authRequest<T>(
     throw new Error('Unable to connect to the authentication service. Please check that the backend is running.');
   }
 
+  // Synchronize in-memory token from cookie if available
+  const cookieToken = csrfCookie();
+  if (cookieToken && cookieToken !== inMemoryCsrfToken) {
+    inMemoryCsrfToken = cookieToken;
+  }
+
   const body = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    const isCsrfFailure = response.status === 403 && method !== 'GET' && !body?.error;
+    const isExplicitCsrfFailure =
+      response.status === 403 &&
+      (body?.code === 'CSRF_ERROR' ||
+        (method !== 'GET' && !body?.error && !body?.message) ||
+        (method !== 'GET' && typeof body?.error === 'string' && body.error.toLowerCase().includes('csrf')));
 
-    if (isCsrfFailure) {
+    if (isExplicitCsrfFailure) {
       inMemoryCsrfToken = null;
 
       // Safe, single-retry mechanism:
@@ -109,8 +121,14 @@ export async function authRequest<T>(
       throw new Error(body.message);
     }
 
+    if (response.status === 401) {
+      throw new Error('Authentication is required or the session is no longer valid. Please sign in again.');
+    }
     if (response.status === 403) {
-      throw new Error('Security validation failed. Please refresh the page and try again.');
+      if (isExplicitCsrfFailure) {
+        throw new Error('Security validation failed. Please refresh the page and try again.');
+      }
+      throw new Error('You do not have permission to perform this action.');
     }
     if (response.status === 400) {
       throw new Error('Invalid request. Please check the entered information.');

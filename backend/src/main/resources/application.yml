@@ -7,7 +7,7 @@ spring:
     password: ${SPRING_DATASOURCE_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
   flyway:
-    enabled: true
+    enabled: ${SPRING_FLYWAY_ENABLED:false}
     baseline-on-migrate: true
   mail:
     host: ${SMTP_HOST:}
@@ -33,7 +33,7 @@ server:
         same-site: lax
 
 app:
-  frontend-origin: ${APP_FRONTEND_ORIGIN:http://localhost:20453}
+  frontend-origin: ${APP_FRONTEND_ORIGIN:http://localhost:3000}
   auth:
     session-ttl: ${AUTH_SESSION_TTL:PT8H}
     otp-ttl: ${AUTH_OTP_TTL:PT10M}

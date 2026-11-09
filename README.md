@@ -11,16 +11,10 @@ pnpm install
 pnpm --filter @workspace/employee-hr-system run dev
 ```
 
-The Replit workflow supplies `PORT` and `BASE_PATH`. If running outside the workflow, use:
-
-```bash
-PORT=20453 BASE_PATH=/ pnpm --filter @workspace/employee-hr-system run dev
-```
-
 Open:
 
 ```text
-http://localhost:20453/
+http://localhost:3000/
 ```
 
 ## Local demo behavior
@@ -40,7 +34,7 @@ by the Spring Boot backend when it is configured. It includes:
 The login page includes an optional Google Identity Services button. To enable it locally:
 
 1. Create a Web OAuth client ID in Google Cloud Console.
-2. Add `http://localhost:20453` as an authorized JavaScript origin.
+2. Add `http://localhost:3000` as an authorized JavaScript origin.
 3. Create `.env.local` in this app folder with:
 
 ```text

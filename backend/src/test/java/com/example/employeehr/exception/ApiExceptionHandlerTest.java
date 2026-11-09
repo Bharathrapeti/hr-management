@@ -120,4 +120,17 @@ class ApiExceptionHandlerTest {
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().get("error")).isEqualTo("Authentication is required.");
     }
+
+    @Test
+    void databaseErrorReturnsInternalServerErrorWithoutExposingDetails() {
+        org.springframework.dao.DataAccessException ex =
+                new org.springframework.dao.DataIntegrityViolationException("Sensitive SQL syntax error near 'SELECT password_hash FROM users'");
+
+        ResponseEntity<Map<String, String>> response = handler.databaseError(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().get("error")).isEqualTo("A database error occurred. Please try again later.");
+        assertThat(response.getBody().get("error")).doesNotContain("SELECT", "password_hash", "users");
+    }
 }

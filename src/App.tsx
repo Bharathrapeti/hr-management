@@ -140,6 +140,26 @@ function formatDate(value: string) {
 function initials(name: string) { return name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(); }
 function cx(...parts: Array<string | false | undefined>) { return parts.filter(Boolean).join(' '); }
 
+function formatGender(value?: string | null): string {
+  if (!value) return 'Not specified';
+  const canonical = value.trim().toUpperCase().replace(/-/g, '_').replace(/\s+/g, '_');
+  const labels: Record<string, string> = {
+    MALE: 'Male',
+    FEMALE: 'Female',
+    NON_BINARY: 'Non-binary',
+    PREFER_NOT_TO_SAY: 'Prefer not to say',
+    OTHER: 'Other',
+  };
+  return labels[canonical] || value;
+}
+
+function normalizeGenderValue(value?: string | null): string {
+  if (!value) return '';
+  const canonical = value.trim().toUpperCase().replace(/-/g, '_').replace(/\s+/g, '_');
+  const valid = ['MALE', 'FEMALE', 'NON_BINARY', 'PREFER_NOT_TO_SAY', 'OTHER'];
+  return valid.includes(canonical) ? canonical : value;
+}
+
 function Badge({ children, tone = 'neutral' }: { children: ReactNode; tone?: 'neutral' | 'success' | 'warning' | 'danger' | 'info' }) {
   return <span className={cx('inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold tracking-wide', tone === 'success' && 'border-emerald-200 bg-emerald-50 text-emerald-700', tone === 'warning' && 'border-amber-200 bg-amber-50 text-amber-700', tone === 'danger' && 'border-rose-200 bg-rose-50 text-rose-700', tone === 'info' && 'border-sky-200 bg-sky-50 text-sky-700', tone === 'neutral' && 'border-slate-200 bg-slate-50 text-slate-600')}>{children}</span>;
 }
@@ -433,8 +453,8 @@ function BackendSignIn({ setRole, onSignIn }: { setRole: (role: Role) => void; o
         {message && <p role="alert" className={cx('text-xs font-semibold', message.includes('successfully') || message.includes('updated') ? 'text-emerald-700' : 'text-rose-700')}>{message}</p>}
       </form>
       {step === 'otp' && <button type="button" disabled={busy || cooldown > 0} onClick={resend} className="mt-4 w-full text-xs font-semibold text-primary disabled:opacity-50 disabled:cursor-not-allowed">{cooldown > 0 ? `Resend verification code (${cooldown}s)` : 'Resend verification code'}</button>}
-      <div className="mt-4 flex justify-between text-xs font-semibold text-primary"><button type="button" onClick={() => { setMode('signup'); setStep('form'); setMessage(''); setCooldown(0); }}>Create account</button><button type="button" onClick={() => { setMode('reset'); setStep('form'); setMessage(''); setCooldown(0); ensureCsrf(true).catch(() => {}); }}>Forgot password?</button></div>
-      {mode !== 'login' && <button type="button" onClick={() => { setMode('login'); setStep('form'); setMessage(''); setCooldown(0); }} className="mt-3 w-full text-xs text-muted-foreground hover:text-foreground">Back to sign in</button>}
+      <div className="mt-4 flex justify-between text-xs font-semibold text-primary"><button type="button" onClick={() => { setMode('signup'); setStep('form'); setMessage(''); setCooldown(0); ensureCsrf().catch(() => {}); }}>Create account</button><button type="button" onClick={() => { setMode('reset'); setStep('form'); setMessage(''); setCooldown(0); ensureCsrf(true).catch(() => {}); }}>Forgot password?</button></div>
+      {mode !== 'login' && <button type="button" onClick={() => { setMode('login'); setStep('form'); setMessage(''); setCooldown(0); ensureCsrf().catch(() => {}); }} className="mt-3 w-full text-xs text-muted-foreground hover:text-foreground">Back to sign in</button>}
       <div className="mt-5 border-t border-border pt-5"><div className="flex items-start gap-3 text-xs leading-5 text-muted-foreground"><ShieldCheck size={16} className="mt-0.5 shrink-0 text-primary" /><span><strong className="font-semibold text-foreground">Secure authentication.</strong> Passwords and sessions are managed by the Spring Boot backend.</span></div></div>
     </div></div>
   </div></div>;
@@ -663,7 +683,7 @@ function EmployeeProfile({ employees }: { employees: Employee[]; setEmployees?: 
             </div>
             <div>
               <p className="text-xs font-medium text-muted-foreground">Gender</p>
-              <p className="mt-1 text-sm font-semibold">{details?.gender || 'Not specified'}</p>
+              <p className="mt-1 text-sm font-semibold">{formatGender(details?.gender)}</p>
             </div>
             <div>
               <p className="text-xs font-medium text-muted-foreground">Date of birth</p>
@@ -802,7 +822,7 @@ function HREmployees({ employees, setEmployees }: { employees: Employee[]; setEm
       });
       setEditForm({
         fullName: details.fullName || employee.name,
-        gender: details.gender || '',
+        gender: normalizeGenderValue(details.gender),
         dateOfBirth: details.dateOfBirth || '',
         residentialAddress: details.residentialAddress || '',
         mobileNumber: details.mobileNumber || '',
@@ -957,11 +977,11 @@ function HREmployees({ employees, setEmployees }: { employees: Employee[]; setEm
                   className="mt-1.5 h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary"
                 >
                   <option value="">Select gender...</option>
-                  <option value="Male">Male</option>
-                  <option value="Female">Female</option>
-                  <option value="Non-binary">Non-binary</option>
-                  <option value="Other">Other</option>
-                  <option value="Prefer not to say">Prefer not to say</option>
+                  <option value="MALE">Male</option>
+                  <option value="FEMALE">Female</option>
+                  <option value="NON_BINARY">Non-binary</option>
+                  <option value="OTHER">Other</option>
+                  <option value="PREFER_NOT_TO_SAY">Prefer not to say</option>
                 </select>
               </label>
 
@@ -2020,9 +2040,11 @@ function HRAccessPage() {
 }
 
 function AppContent() {
+  const [, setLocation] = useLocation();
   const [role, setRole] = useLocalState<Role>('meridian-role', 'employee');
   const [authenticated, setAuthenticated] = useState(false);
   const [authChecking, setAuthChecking] = useState(true);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [employees, setEmployees] = useLocalState<Employee[]>('meridian-employees', seedEmployees);
   const [attendance, setAttendance] = useLocalState<Attendance[]>('meridian-attendance', seedAttendance);
   const [leaves, setLeaves] = useLocalState<LeaveRequest[]>('meridian-leaves', seedLeaves);
@@ -2038,10 +2060,12 @@ function AppContent() {
         const user = await authRequest<AuthUser>('/api/auth/me');
         if (!active) return;
 
+        setCurrentUser(user);
         setRole(user.role === 'HR_ADMIN' ? 'hr' : user.effectiveRoles?.includes('MANAGER') ? 'manager' : 'employee');
         setAuthenticated(true);
       } catch {
         if (active) {
+          setCurrentUser(null);
           setAuthenticated(false);
         }
       } finally {
@@ -2058,6 +2082,7 @@ function AppContent() {
     };
   }, [setRole]);
   const signIn = (user: AuthUser) => {
+    setCurrentUser(user);
     setRole(user.role === 'HR_ADMIN' ? 'hr' : user.effectiveRoles?.includes('MANAGER') ? 'manager' : 'employee');
     setAuthenticated(true);
   };
@@ -2065,13 +2090,49 @@ function AppContent() {
     ensureCsrf()
       .then(() => authRequest<AuthMessage>('/api/auth/logout', { method: 'POST' }))
       .catch(() => undefined)
-      .finally(() => setAuthenticated(false));
+      .finally(() => {
+        setCurrentUser(null);
+        setAuthenticated(false);
+      });
   };
   if (authChecking) return <div className="grid min-h-[100dvh] place-items-center text-sm text-muted-foreground">Checking your session…</div>;
+  const isHrAdmin = authenticated && currentUser?.role === 'HR_ADMIN';
+  const isManager = authenticated && (currentUser?.effectiveRoles?.includes('MANAGER') || false);
+
   const page = (component: ReactNode) => authenticated
     ? <Shell role={role} setRole={setRole} onSignOut={signOut}>{component}</Shell>
     : <BackendSignIn setRole={setRole} onSignIn={signIn} />;
-  return <Switch><Route path="/"><BackendSignIn setRole={setRole} onSignIn={signIn} /></Route><Route path="/employee/dashboard">{page(<EmployeeDashboard employees={employees} attendance={attendance} leaves={leaves} />)}</Route><Route path="/employee/attendance">{page(<EmployeeAttendance attendance={attendance} setAttendance={setAttendance} />)}</Route><Route path="/employee/leave">{page(<EmployeeLeave leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/employee/profile">{page(<EmployeeProfile employees={employees} setEmployees={setEmployees} />)}</Route><Route path="/manager/dashboard">{page(<ManagerDashboard />)}</Route><Route path="/hr/dashboard">{page(<HRDashboard employees={employees} attendance={attendance} leaves={leaves} />)}</Route><Route path="/hr/registrations">{page(<HRRegistrationsPage />)}</Route><Route path="/hr/employees">{page(<HREmployees employees={employees} setEmployees={setEmployees} />)}</Route><Route path="/hr/access">{page(<HRAccessPage />)}</Route><Route path="/hr/leave-requests">{page(<HRLeaveRequests leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/hr/attendance">{page(<HRAttendance attendance={attendance} employees={employees} />)}</Route><Route path="/hr/reports">{page(<HRReports attendance={attendance} leaves={leaves} />)}</Route><Route path="/settings">{page(<SettingsPage role={role} />)}</Route><Route><BackendSignIn setRole={setRole} onSignIn={signIn} /></Route></Switch>;
+
+  const hrPage = (component: ReactNode) => {
+    if (!authenticated) {
+      return <BackendSignIn setRole={setRole} onSignIn={signIn} />;
+    }
+    if (!isHrAdmin) {
+      return (
+        <Shell role={role} setRole={setRole} onSignOut={signOut}>
+          <div className="page-enter rounded-2xl border border-card-border bg-card p-8 shadow-sm text-center">
+            <h2 className="text-xl font-bold text-foreground">Access Restricted</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              HR administrator access is required to view this page.
+            </p>
+            <div className="mt-6 flex justify-center gap-3">
+              <Button
+                testId="button-restricted-back"
+                onClick={() => {
+                  setLocation(isManager ? '/manager/dashboard' : '/employee/dashboard');
+                }}
+              >
+                Return to dashboard
+              </Button>
+            </div>
+          </div>
+        </Shell>
+      );
+    }
+    return <Shell role={role} setRole={setRole} onSignOut={signOut}>{component}</Shell>;
+  };
+
+  return <Switch><Route path="/"><BackendSignIn setRole={setRole} onSignIn={signIn} /></Route><Route path="/employee/dashboard">{page(<EmployeeDashboard employees={employees} attendance={attendance} leaves={leaves} />)}</Route><Route path="/employee/attendance">{page(<EmployeeAttendance attendance={attendance} setAttendance={setAttendance} />)}</Route><Route path="/employee/leave">{page(<EmployeeLeave leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/employee/profile">{page(<EmployeeProfile employees={employees} setEmployees={setEmployees} />)}</Route><Route path="/manager/dashboard">{page(<ManagerDashboard />)}</Route><Route path="/hr/dashboard">{hrPage(<HRDashboard employees={employees} attendance={attendance} leaves={leaves} />)}</Route><Route path="/hr/registrations">{hrPage(<HRRegistrationsPage />)}</Route><Route path="/hr/employees">{hrPage(<HREmployees employees={employees} setEmployees={setEmployees} />)}</Route><Route path="/hr/access">{hrPage(<HRAccessPage />)}</Route><Route path="/hr/leave-requests">{hrPage(<HRLeaveRequests leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/hr/attendance">{hrPage(<HRAttendance attendance={attendance} employees={employees} />)}</Route><Route path="/hr/reports">{hrPage(<HRReports attendance={attendance} leaves={leaves} />)}</Route><Route path="/settings">{page(<SettingsPage role={role} />)}</Route><Route><BackendSignIn setRole={setRole} onSignIn={signIn} /></Route></Switch>;
 }
 function Router() { return <ErrorBoundary resetKey={window.location.pathname}><AppContent /></ErrorBoundary>; }
 function App() { return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><Router /></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>; }

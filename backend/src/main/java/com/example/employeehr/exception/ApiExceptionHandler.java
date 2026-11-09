@@ -1,6 +1,7 @@
 package com.example.employeehr.exception;
 
 import java.util.Map;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mail.MailException;
@@ -57,5 +58,11 @@ public class ApiExceptionHandler {
     @ExceptionHandler(AuthenticationException.class)
     ResponseEntity<Map<String, String>> unauthenticated(AuthenticationException exception) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Authentication is required."));
+    }
+
+    @ExceptionHandler(DataAccessException.class)
+    ResponseEntity<Map<String, String>> databaseError(DataAccessException exception) {
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("error", "A database error occurred. Please try again later."));
     }
 }
