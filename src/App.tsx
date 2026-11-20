@@ -144,56 +144,183 @@ function initials(name: string) {
 }
 function cx(...parts: Array<string | false | undefined>) { return parts.filter(Boolean).join(' '); }
 
-type WhatsAppProfileData = {
+type UserProfileData = {
   photo: string | null;
   about: string;
   displayName?: string;
+  updatedAt?: number;
 };
 
-const WHATSAPP_PRESET_STATUSES = [
+type WhatsAppProfileData = UserProfileData;
+
+const ALL_PROFILES_KEY = 'meridian_all_user_profiles';
+
+const PROFESSIONAL_STATUS_PRESETS = [
   { label: 'Available', emoji: '🟢' },
-  { label: 'Busy', emoji: '🔴' },
   { label: 'At work', emoji: '💼' },
   { label: 'In a meeting', emoji: '📅' },
   { label: 'Working remotely', emoji: '🏠' },
-  { label: 'On leave', emoji: '🌴' },
-  { label: 'Urgent calls only', emoji: '📞' },
-  { label: 'Hey there! I am using Meridian.', emoji: '👋' },
+  { label: 'Focus mode', emoji: '⚡' },
+  { label: 'On annual leave', emoji: '🌴' },
+  { label: 'Urgent matters only', emoji: '📞' },
+  { label: 'Business travel', emoji: '✈️' },
 ];
 
-function getProfileStorageKey(userEmailOrId?: string | number) {
-  const identifier = userEmailOrId ? String(userEmailOrId).toLowerCase().trim() : 'default';
-  return `meridian_whatsapp_profile_${identifier}`;
-}
+const WHATSAPP_PRESET_STATUSES = PROFESSIONAL_STATUS_PRESETS;
 
-function loadWhatsAppProfile(userEmailOrId?: string | number): WhatsAppProfileData {
+function loadAllUserProfiles(): Record<string, UserProfileData> {
   try {
-    const raw = localStorage.getItem(getProfileStorageKey(userEmailOrId));
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return {
-        photo: parsed.photo || null,
-        about: parsed.about || 'Available',
-        displayName: parsed.displayName || '',
-      };
-    }
+    const raw = localStorage.getItem(ALL_PROFILES_KEY);
+    return raw ? JSON.parse(raw) : {};
   } catch {
-    // fallback
+    return {};
   }
-  return {
-    photo: null,
-    about: 'Available',
-    displayName: '',
-  };
 }
 
-function saveWhatsAppProfile(userEmailOrId: string | number | undefined, data: WhatsAppProfileData) {
+function loadUserProfile(identifier?: string | number): UserProfileData {
+  if (!identifier) {
+    return { photo: null, about: 'Available', displayName: '' };
+  }
+  const clean = String(identifier).toLowerCase().trim();
+  const all = loadAllUserProfiles();
+  if (all[clean]) {
+    return all[clean];
+  }
   try {
-    localStorage.setItem(getProfileStorageKey(userEmailOrId), JSON.stringify(data));
-    window.dispatchEvent(new CustomEvent('meridian-profile-updated', { detail: { identifier: userEmailOrId, ...data } }));
+    const raw = localStorage.getItem(`meridian_profile_${clean}`);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  try {
+    const rawOld = localStorage.getItem(`meridian_whatsapp_profile_${clean}`);
+    if (rawOld) return JSON.parse(rawOld);
+  } catch {}
+  return { photo: null, about: 'Available', displayName: '' };
+}
+
+function saveUserProfile(
+  userRef: { email?: string; id?: string | number; employeeId?: string; name?: string } | string | number | undefined,
+  data: UserProfileData
+) {
+  try {
+    const all = loadAllUserProfiles();
+    const updatedData = { ...data, updatedAt: Date.now() };
+
+    const keys: string[] = [];
+    if (typeof userRef === 'object' && userRef !== null) {
+      if (userRef.email) keys.push(userRef.email.toLowerCase().trim());
+      if (userRef.employeeId) keys.push(userRef.employeeId.toLowerCase().trim());
+      if (userRef.id !== undefined && userRef.id !== null) keys.push(String(userRef.id).toLowerCase().trim());
+      if (userRef.name) keys.push(userRef.name.toLowerCase().trim());
+    } else if (userRef) {
+      keys.push(String(userRef).toLowerCase().trim());
+    } else {
+      keys.push('default');
+    }
+
+    for (const k of keys) {
+      all[k] = updatedData;
+      localStorage.setItem(`meridian_profile_${k}`, JSON.stringify(updatedData));
+      localStorage.setItem(`meridian_whatsapp_profile_${k}`, JSON.stringify(updatedData));
+    }
+    localStorage.setItem(ALL_PROFILES_KEY, JSON.stringify(all));
+
+    window.dispatchEvent(new CustomEvent('meridian-profile-updated', { detail: { keys, data: updatedData } }));
   } catch (e) {
     console.error('Failed to save profile in localStorage', e);
   }
+}
+
+const loadWhatsAppProfile = loadUserProfile;
+const saveWhatsAppProfile = saveUserProfile;
+
+function getUserPhoto(user?: { email?: string; id?: string | number; employeeId?: string; name?: string } | string | null): string | null {
+  if (!user) return null;
+  if (typeof user === 'string') {
+    const direct = loadUserProfile(user);
+    if (direct.photo) return direct.photo;
+    const all = loadAllUserProfiles();
+    return all[user.toLowerCase().trim()]?.photo || null;
+  }
+  if (user.email) {
+    const byEmail = loadUserProfile(user.email);
+    if (byEmail.photo) return byEmail.photo;
+  }
+  if (user.employeeId) {
+    const byEmpId = loadUserProfile(user.employeeId);
+    if (byEmpId.photo) return byEmpId.photo;
+  }
+  if (user.id !== undefined && user.id !== null) {
+    const byId = loadUserProfile(user.id);
+    if (byId.photo) return byId.photo;
+  }
+  if (user.name) {
+    const byName = loadUserProfile(user.name);
+    if (byName.photo) return byName.photo;
+  }
+  const all = loadAllUserProfiles();
+  if (user.email && all[user.email.toLowerCase().trim()]?.photo) {
+    return all[user.email.toLowerCase().trim()].photo;
+  }
+  if (user.employeeId && all[user.employeeId.toLowerCase().trim()]?.photo) {
+    return all[user.employeeId.toLowerCase().trim()].photo;
+  }
+  if (user.name && all[user.name.toLowerCase().trim()]?.photo) {
+    return all[user.name.toLowerCase().trim()].photo;
+  }
+  return null;
+}
+
+function UserAvatar({
+  user,
+  name,
+  className = "h-9 w-9",
+  textClassName = "text-xs",
+  bordered = false,
+}: {
+  user?: { email?: string; id?: string | number; employeeId?: string; name?: string } | string | null;
+  name?: string;
+  className?: string;
+  textClassName?: string;
+  bordered?: boolean;
+}) {
+  const effectiveName = name || (typeof user === 'object' && user ? user.name : '') || 'User';
+  const [photo, setPhoto] = useState<string | null>(() => getUserPhoto(user || name));
+
+  useEffect(() => {
+    setPhoto(getUserPhoto(user || name));
+    const handleUpdate = () => {
+      setPhoto(getUserPhoto(user || name));
+    };
+    window.addEventListener('meridian-profile-updated', handleUpdate);
+    return () => window.removeEventListener('meridian-profile-updated', handleUpdate);
+  }, [user, name]);
+
+  if (photo) {
+    return (
+      <img
+        src={photo}
+        alt={effectiveName}
+        className={cx(
+          "object-cover shrink-0 rounded-full",
+          bordered && "border border-border/80 shadow-xs",
+          className
+        )}
+      />
+    );
+  }
+
+  return (
+    <div
+      className={cx(
+        "grid place-items-center bg-primary/10 font-bold text-primary shrink-0 rounded-full",
+        textClassName,
+        bordered && "border border-border/60",
+        className
+      )}
+    >
+      {initials(effectiveName)}
+    </div>
+  );
 }
 
 function formatGender(value?: string | null): string {
@@ -244,47 +371,86 @@ function LogoMark() {
 function Shell({ role, setRole, onSignOut, currentUser, children }: { role: Role; setRole: (role: Role) => void; onSignOut: () => void; currentUser?: AuthUser | null; children: ReactNode }) {
   const [location, setLocation] = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
-  const employeeNav = [{ href: '/employee/dashboard', label: 'Overview', icon: LayoutDashboard }, { href: '/employee/attendance', label: 'My attendance', icon: CalendarCheck2 }, { href: '/employee/leave', label: 'Leave', icon: FileText }, { href: '/employee/profile', label: 'Profile', icon: UserRound }];
-  const hrNav = [{ href: '/hr/dashboard', label: 'Overview', icon: LayoutDashboard }, { href: '/hr/registrations', label: 'Registrations', icon: UserCheck }, { href: '/hr/employees', label: 'Employees', icon: Users }, { href: '/hr/access', label: 'Access control', icon: ShieldCheck }, { href: '/hr/leave-requests', label: 'Leave requests', icon: FileText }, { href: '/hr/attendance', label: 'Attendance', icon: CalendarCheck2 }, { href: '/hr/reports', label: 'Reports', icon: BarChart3 }];
-  const managerNav = [{ href: '/manager/dashboard', label: 'Assigned employees', icon: Users }];
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
+  const employeeNav = [
+    { href: '/employee/dashboard', label: 'Overview', icon: LayoutDashboard },
+    { href: '/employee/attendance', label: 'My attendance', icon: CalendarCheck2 },
+    { href: '/employee/leave', label: 'Leave', icon: FileText },
+    { href: '/employee/profile', label: 'Profile', icon: UserRound }
+  ];
+  const hrNav = [
+    { href: '/hr/dashboard', label: 'Overview', icon: LayoutDashboard },
+    { href: '/hr/registrations', label: 'Registrations', icon: UserCheck },
+    { href: '/hr/employees', label: 'Employees', icon: Users },
+    { href: '/hr/access', label: 'Access control', icon: ShieldCheck },
+    { href: '/hr/leave-requests', label: 'Leave requests', icon: FileText },
+    { href: '/hr/attendance', label: 'Attendance', icon: CalendarCheck2 },
+    { href: '/hr/reports', label: 'Reports', icon: BarChart3 },
+    { href: '/employee/profile', label: 'My profile', icon: UserRound }
+  ];
+  const managerNav = [
+    { href: '/manager/dashboard', label: 'Assigned employees', icon: Users },
+    { href: '/employee/profile', label: 'My profile', icon: UserRound }
+  ];
   const nav = role === 'hr' ? hrNav : role === 'manager' ? managerNav : employeeNav;
   const active = (href: string) => location === href;
-  const navigate = (href: string) => { setLocation(href); setMenuOpen(false); };
+  const navigate = (href: string) => { setLocation(href); setMenuOpen(false); setUserMenuOpen(false); };
 
   const userIdentifier = currentUser?.email || (role === 'hr' ? 'hr' : 'employee');
-  const [userProfile, setUserProfile] = useState(() => loadWhatsAppProfile(userIdentifier));
+  const [userProfile, setUserProfile] = useState(() => loadUserProfile(userIdentifier));
 
   useEffect(() => {
-    setUserProfile(loadWhatsAppProfile(userIdentifier));
+    setUserProfile(loadUserProfile(userIdentifier));
     const handleUpdate = () => {
-      setUserProfile(loadWhatsAppProfile(userIdentifier));
+      setUserProfile(loadUserProfile(userIdentifier));
     };
     window.addEventListener('meridian-profile-updated', handleUpdate);
     return () => window.removeEventListener('meridian-profile-updated', handleUpdate);
   }, [userIdentifier]);
 
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setUserMenuOpen(false);
+      }
+    }
+    if (userMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [userMenuOpen]);
+
   const defaultName = role === 'hr' ? 'Avery Morgan' : 'Maya Chen';
   const displayName = userProfile.displayName || currentUser?.name || defaultName;
+  const roleTitle = role === 'hr' ? 'HR Administrator' : role === 'manager' ? 'Manager' : 'Employee';
 
   return <div className="grain min-h-[100dvh] bg-background">
     <aside className={cx('fixed inset-y-0 left-0 z-40 flex w-[252px] flex-col bg-sidebar px-4 py-5 transition-transform duration-300 lg:translate-x-0', menuOpen ? 'translate-x-0' : '-translate-x-full')}>
       <LogoMark />
-      <div className="mt-9 flex items-center gap-2 rounded-xl border border-sidebar-border bg-sidebar-accent px-3 py-2.5">
-        {userProfile.photo ? (
-          <img src={userProfile.photo} alt="Avatar" className="h-8 w-8 rounded-full object-cover border border-emerald-500/50 shadow-sm" />
-        ) : (
-          <div className="grid h-8 w-8 place-items-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground text-xs font-bold">{initials(displayName)}</div>
-        )}
+      <div
+        className="mt-9 flex items-center gap-2.5 rounded-xl border border-sidebar-border bg-sidebar-accent px-3 py-2.5 cursor-pointer hover:border-sidebar-primary/40 transition-colors"
+        onClick={() => navigate('/employee/profile')}
+        title="View profile"
+      >
+        <UserAvatar
+          user={{ email: userIdentifier, name: displayName }}
+          className="h-8 w-8 ring-1 ring-emerald-500/40"
+        />
         <div className="min-w-0">
           <p className="truncate text-xs font-semibold text-sidebar-foreground">{displayName}</p>
-          <p className="text-[10px] text-slate-400">{role === 'hr' ? 'HR administrator' : role === 'manager' ? 'Manager' : 'Employee'}</p>
+          <p className="text-[10px] text-slate-400">{roleTitle}</p>
         </div>
         <ChevronDown size={15} className="ml-auto text-slate-400" />
       </div>
       <div className="mono mb-3 mt-8 px-3 text-[10px] font-bold uppercase tracking-[.18em] text-slate-500">{role === 'hr' ? 'Workspace' : role === 'manager' ? 'Manager workspace' : 'My workspace'}</div>
       <nav className="space-y-1">{nav.map(({ href, label, icon: Icon }) => <Link key={href} href={href} data-testid={`link-${label.toLowerCase().replaceAll(' ', '-')}`} className={cx('group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors', active(href) ? 'bg-sidebar-primary text-sidebar-primary-foreground shadow-sm' : 'text-slate-400 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground')}><Icon size={18} /><span>{label}</span>{label === 'Leave requests' && <span className="ml-auto rounded-full bg-amber-400 px-1.5 py-0.5 text-[10px] font-bold text-amber-950">1</span>}</Link>)}</nav>
       <div className="mono mb-3 mt-8 px-3 text-[10px] font-bold uppercase tracking-[.18em] text-slate-500">Account</div>
-      <nav className="space-y-1"><Link href="/settings" data-testid="link-settings" className={cx('flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors', active('/settings') ? 'bg-sidebar-primary text-sidebar-primary-foreground' : 'text-slate-400 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground')}><Settings size={18} /><span>Settings</span></Link></nav>
+      <nav className="space-y-1">
+        <Link href="/employee/profile" data-testid="link-my-profile" className={cx('flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors', active('/employee/profile') ? 'bg-sidebar-primary text-sidebar-primary-foreground' : 'text-slate-400 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground')}><UserRound size={18} /><span>My profile</span></Link>
+        <Link href="/settings" data-testid="link-settings" className={cx('flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors', active('/settings') ? 'bg-sidebar-primary text-sidebar-primary-foreground' : 'text-slate-400 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground')}><Settings size={18} /><span>Settings</span></Link>
+      </nav>
       <div className="mt-auto rounded-2xl border border-sidebar-border bg-sidebar-accent/70 p-3.5"><div className="flex items-center gap-2 text-xs font-semibold text-sidebar-foreground"><ShieldCheck size={15} className="text-sidebar-primary" /> Local demo mode</div><p className="mt-2 text-[11px] leading-relaxed text-slate-400">Data stays in this browser. No production authentication is connected.</p></div>
       <button data-testid="button-sign-out" onClick={() => { onSignOut(); navigate('/'); }} className="mt-3 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-400 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"><LogOut size={18} /> Sign out</button>
     </aside>
@@ -296,11 +462,137 @@ function Shell({ role, setRole, onSignOut, currentUser, children }: { role: Role
         <div className="ml-auto flex items-center gap-3">
           <div className="hidden items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground sm:flex"><span className="h-2 w-2 rounded-full bg-emerald-500" /> Backend session</div>
           <button data-testid="button-notifications" onClick={() => window.alert('No new notifications in this local demo.')} className="relative rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"><Bell size={19} /><span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-accent" /></button>
-          {userProfile.photo ? (
-            <img src={userProfile.photo} alt="Avatar" className="h-9 w-9 rounded-full object-cover border border-emerald-500/50 shadow-sm" />
-          ) : (
-            <div className="grid h-9 w-9 place-items-center rounded-full bg-primary/10 text-xs font-bold text-primary">{initials(displayName)}</div>
-          )}
+
+          {/* Interactive Top-Right User Profile Avatar & Dropdown */}
+          <div className="relative" ref={userMenuRef}>
+            <button
+              type="button"
+              data-testid="button-user-menu"
+              onClick={() => setUserMenuOpen((prev) => !prev)}
+              aria-expanded={userMenuOpen}
+              aria-haspopup="true"
+              className="flex items-center gap-2.5 rounded-full p-1 pl-1.5 pr-2.5 transition-colors hover:bg-muted focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer"
+            >
+              <UserAvatar
+                user={{ email: userIdentifier, name: displayName }}
+                className="h-9 w-9 rounded-full ring-2 ring-primary/20 shadow-xs"
+              />
+              <div className="hidden text-left sm:block">
+                <p className="text-xs font-semibold leading-tight text-foreground">{displayName}</p>
+                <p className="text-[10px] leading-tight text-muted-foreground">{roleTitle}</p>
+              </div>
+              <ChevronDown size={14} className={cx('text-muted-foreground transition-transform duration-200', userMenuOpen && 'rotate-180')} />
+            </button>
+
+            {userMenuOpen && (
+              <div
+                data-testid="user-dropdown-menu"
+                className="absolute right-0 top-full mt-2 w-72 rounded-2xl border border-border bg-card p-2 shadow-xl ring-1 ring-black/5 z-50 animate-in fade-in zoom-in-95 duration-100"
+              >
+                {/* Profile Preview Card */}
+                <div className="rounded-xl bg-muted/60 p-3 mb-1">
+                  <div className="flex items-center gap-3">
+                    <UserAvatar
+                      user={{ email: userIdentifier, name: displayName }}
+                      className="h-11 w-11 rounded-full ring-2 ring-background"
+                      textClassName="text-sm"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-bold text-foreground">{displayName}</p>
+                      <p className="truncate text-xs text-muted-foreground">{currentUser?.email || (role === 'hr' ? 'hr@northstar.edu' : 'employee@northstar.edu')}</p>
+                      <div className="mt-1">
+                        <Badge tone={role === 'hr' ? 'info' : role === 'manager' ? 'warning' : 'success'}>
+                          {roleTitle}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                  {/* Status Preview */}
+                  <div className="mt-2.5 rounded-lg border border-border/70 bg-card px-2.5 py-1.5 text-xs text-muted-foreground flex items-center gap-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+                    <span className="truncate italic">"{userProfile.about || 'Available'}"</span>
+                  </div>
+                </div>
+
+                {/* Quick Status Selector */}
+                <div className="px-2 py-1.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Quick status</p>
+                  <div className="grid grid-cols-2 gap-1">
+                    {PROFESSIONAL_STATUS_PRESETS.slice(0, 4).map((preset) => (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() => {
+                          saveUserProfile(userIdentifier, { ...userProfile, about: `${preset.emoji} ${preset.label}` });
+                        }}
+                        className={cx(
+                          "flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-left transition-colors cursor-pointer",
+                          userProfile.about?.includes(preset.label) ? "bg-primary/10 text-primary font-semibold" : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                        )}
+                      >
+                        <span>{preset.emoji}</span>
+                        <span className="truncate">{preset.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="my-1 border-t border-border" />
+
+                {/* Navigation Items */}
+                <div className="space-y-0.5">
+                  <button
+                    type="button"
+                    data-testid="dropdown-link-profile"
+                    onClick={() => {
+                      navigate('/employee/profile');
+                      setUserMenuOpen(false);
+                    }}
+                    className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted cursor-pointer"
+                  >
+                    <UserRound size={15} className="text-muted-foreground" />
+                    <div className="text-left">
+                      <p className="font-semibold leading-none">My Profile</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">Edit photo, name & status</p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    data-testid="dropdown-link-settings"
+                    onClick={() => {
+                      navigate('/settings');
+                      setUserMenuOpen(false);
+                    }}
+                    className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted cursor-pointer"
+                  >
+                    <Settings size={15} className="text-muted-foreground" />
+                    <div className="text-left">
+                      <p className="font-semibold leading-none">Settings</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">System preferences & theme</p>
+                    </div>
+                  </button>
+                </div>
+
+                <div className="my-1 border-t border-border" />
+
+                {/* Sign Out */}
+                <button
+                  type="button"
+                  data-testid="dropdown-button-sign-out"
+                  onClick={() => {
+                    setUserMenuOpen(false);
+                    onSignOut();
+                    navigate('/');
+                  }}
+                  className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium text-rose-600 transition-colors hover:bg-rose-50 dark:hover:bg-rose-950/20 cursor-pointer"
+                >
+                  <LogOut size={15} />
+                  <span>Sign out</span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </header>
       <main className="mx-auto max-w-[1440px] p-5 md:p-8">{children}</main>
@@ -592,7 +884,7 @@ function EmployeeLeave({ leaves, setLeaves }: { leaves: LeaveRequest[]; setLeave
   return <div className="page-enter"><SectionTitle eyebrow="My workspace" title="Leave" detail="Plan time away and keep track of your requests." action={<Button testId="button-scroll-leave" onClick={() => document.getElementById('leave-form')?.scrollIntoView({ behavior: 'smooth' })}><Plus size={16} /> New request</Button>} /><div className="grid gap-6 lg:grid-cols-[.8fr_1.2fr]"><form id="leave-form" onSubmit={submit} className="rounded-2xl border border-card-border bg-card p-6 shadow-sm"><div className="mb-5"><h2 className="font-bold">Apply for leave</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Your manager will be notified to review this request.</p></div><div className="space-y-4"><label className="block text-sm font-medium">Leave type<select data-testid="select-leave-type" value={form.leaveType} onChange={(e) => setForm({ ...form, leaveType: e.target.value })} className="mt-2 h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"><option>Annual leave</option><option>Personal leave</option><option>Sick leave</option><option>Study leave</option></select></label><div className="grid gap-3 sm:grid-cols-2"><label className="block text-sm font-medium">From<input data-testid="input-leave-from" required type="date" value={form.fromDate} onChange={(e) => setForm({ ...form, fromDate: e.target.value })} className="mt-2 h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary" /></label><label className="block text-sm font-medium">To<input data-testid="input-leave-to" required type="date" value={form.toDate} onChange={(e) => setForm({ ...form, toDate: e.target.value })} className="mt-2 h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary" /></label></div><label className="block text-sm font-medium">Reason<textarea data-testid="input-leave-reason" required value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} rows={4} placeholder="Add a short note for your manager" className="mt-2 w-full resize-none rounded-lg border border-input bg-background p-3 text-sm outline-none placeholder:text-muted-foreground focus:border-primary" /></label><Button type="submit" testId="button-submit-leave" className="w-full">Submit request <ArrowRight size={16} /></Button>{notice && <p className="flex items-center gap-2 text-xs font-semibold text-emerald-700"><CheckCircle2 size={15} /> {notice}</p>}</div></form><div className="rounded-2xl border border-card-border bg-card p-6 shadow-sm"><div className="mb-5 flex items-center justify-between"><div><h2 className="font-bold">Leave history</h2><p className="mt-1 text-xs text-muted-foreground">{mine.length} requests on record</p></div><div className="rounded-xl bg-amber-50 px-3 py-2 text-center"><p className="text-[10px] uppercase tracking-wider text-amber-700">Available</p><p className="mt-0.5 text-lg font-bold text-amber-800">14d</p></div></div><div className="space-y-3">{mine.map((leave) => <div key={leave.id} data-testid={`card-leave-${leave.id}`} className="rounded-xl border border-border p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold">{leave.leaveType}</p><p className="mt-1 text-xs text-muted-foreground">{formatDate(leave.fromDate)} — {formatDate(leave.toDate)}</p></div><Badge tone={statusTone(leave.status)}>{leave.status}</Badge></div><p className="mt-3 text-sm text-muted-foreground">{leave.reason}</p><p className="mono mt-3 text-[10px] uppercase tracking-wider text-muted-foreground">Applied {formatDate(leave.appliedDate)} · {leave.id}</p></div>)}</div></div></div></div>;
 }
 
-function EmployeeProfile({ employees, setEmployees, currentUser }: { employees: Employee[]; setEmployees?: (value: Employee[] | ((prev: Employee[]) => Employee[])) => void; currentUser?: AuthUser | null }) {
+function EmployeeProfile({ role, employees, setEmployees, currentUser }: { role?: Role; employees: Employee[]; setEmployees?: (value: Employee[] | ((prev: Employee[]) => Employee[])) => void; currentUser?: AuthUser | null }) {
   const fallbackEmployee = employees[0];
   const [details, setDetails] = useState<PersonalDetails | null>(null);
   const [corrections, setCorrections] = useState<CorrectionRequest[]>([]);
@@ -602,9 +894,13 @@ function EmployeeProfile({ employees, setEmployees, currentUser }: { employees: 
   const [requestedChanges, setRequestedChanges] = useState('');
   const [submittingCorrection, setSubmittingCorrection] = useState(false);
 
-  // WhatsApp-style profile facility states
+  // Profile facility states
+  const isHr = role === 'hr' || currentUser?.role === 'HR_ADMIN' || details?.role === 'HR_ADMIN';
+  const isManager = role === 'manager' || details?.role === 'MANAGER';
+  const roleDisplay = isHr ? 'HR Administrator' : isManager ? 'Manager' : 'Active Employee';
+  const fallbackName = isHr ? 'Avery Morgan' : isManager ? 'Jordan Reed' : fallbackEmployee.name;
   const userIdentifier = currentUser?.email || details?.email || fallbackEmployee.email;
-  const [profileData, setProfileData] = useState<WhatsAppProfileData>(() => loadWhatsAppProfile(userIdentifier));
+  const [profileData, setProfileData] = useState<UserProfileData>(() => loadUserProfile(userIdentifier));
   const [isEditingAbout, setIsEditingAbout] = useState(false);
   const [aboutDraft, setAboutDraft] = useState('');
   const [isEditingName, setIsEditingName] = useState(false);
@@ -614,17 +910,17 @@ function EmployeeProfile({ employees, setEmployees, currentUser }: { employees: 
 
   useEffect(() => {
     if (userIdentifier) {
-      setProfileData(loadWhatsAppProfile(userIdentifier));
+      setProfileData(loadUserProfile(userIdentifier));
     }
   }, [userIdentifier]);
 
-  const updateProfile = (patch: Partial<WhatsAppProfileData>) => {
-    const updated: WhatsAppProfileData = {
+  const updateProfile = (patch: Partial<UserProfileData>) => {
+    const updated: UserProfileData = {
       ...profileData,
       ...patch,
     };
     setProfileData(updated);
-    saveWhatsAppProfile(userIdentifier, updated);
+    saveUserProfile(userIdentifier, updated);
   };
 
   const handlePhotoFile = (file: File) => {
@@ -687,7 +983,7 @@ function EmployeeProfile({ employees, setEmployees, currentUser }: { employees: 
     const trimmed = aboutDraft.trim();
     updateProfile({ about: trimmed || 'Available' });
     setIsEditingAbout(false);
-    setSuccessMessage('About description updated successfully.');
+    setSuccessMessage('Status & bio updated successfully.');
   };
 
   const handleSaveDisplayName = (e?: FormEvent) => {
@@ -705,14 +1001,14 @@ function EmployeeProfile({ employees, setEmployees, currentUser }: { employees: 
     } catch {
       setDetails({
         id: 1,
-        fullName: fallbackEmployee.name,
-        email: fallbackEmployee.email,
+        fullName: currentUser?.name || fallbackName,
+        email: currentUser?.email || fallbackEmployee.email,
         gender: null,
         dateOfBirth: null,
         age: null,
         residentialAddress: null,
         mobileNumber: fallbackEmployee.phone !== '—' ? fallbackEmployee.phone : null,
-        role: 'EMPLOYEE',
+        role: isHr ? 'HR_ADMIN' : isManager ? 'MANAGER' : 'EMPLOYEE',
         status: 'ACTIVE',
       });
     }
@@ -753,24 +1049,32 @@ function EmployeeProfile({ employees, setEmployees, currentUser }: { employees: 
     }
   };
 
-  const baseName = details?.fullName || fallbackEmployee.name;
+  const baseName = details?.fullName || currentUser?.name || fallbackName;
   const effectiveName = profileData.displayName || baseName;
-  const roleDisplay = details?.role === 'HR_ADMIN' ? 'HR administrator' : 'Active employee';
+  const eyebrowText = isHr ? 'People operations' : isManager ? 'Manager workspace' : 'My workspace';
+  const pageTitle = isHr ? 'Administrator profile' : isManager ? 'Manager profile' : 'Personal profile';
+  const pageDetail = isHr
+    ? 'Manage your administrative profile, public photo, and professional status.'
+    : isManager
+    ? 'Manage your manager profile, public photo, and team status.'
+    : 'View your personal and employment details on record.';
 
   return (
     <div className="page-enter">
       <SectionTitle
-        eyebrow="My workspace"
-        title="Personal profile"
-        detail="View your personal and employment details on record."
+        eyebrow={eyebrowText}
+        title={pageTitle}
+        detail={pageDetail}
         action={
-          <Button
-            testId="button-open-correction-modal"
-            variant="secondary"
-            onClick={() => { setCorrectionModalOpen(true); setError(''); setSuccessMessage(''); }}
-          >
-            <FileText size={15} /> Request correction
-          </Button>
+          !isHr && !isManager ? (
+            <Button
+              testId="button-open-correction-modal"
+              variant="secondary"
+              onClick={() => { setCorrectionModalOpen(true); setError(''); setSuccessMessage(''); }}
+            >
+              <FileText size={15} /> Request correction
+            </Button>
+          ) : undefined
         }
       />
 
@@ -838,13 +1142,13 @@ function EmployeeProfile({ employees, setEmployees, currentUser }: { employees: 
 
       <div className="grid gap-6 lg:grid-cols-[.45fr_1fr]">
         <div className="rounded-2xl bg-sidebar p-6 text-sidebar-foreground shadow-md space-y-5">
-          {/* WhatsApp Header Badge */}
+          {/* Profile Card Header */}
           <div className="flex items-center justify-between border-b border-sidebar-border pb-3">
             <div className="flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-emerald-400" />
-              <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400">Profile & About</span>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400">Public Profile</span>
             </div>
-            <span className="text-[10px] text-slate-400">WhatsApp style</span>
+            <span className="text-[10px] text-slate-400">Directory card</span>
           </div>
 
           {/* Profile Photo with Camera Badge */}
@@ -1001,11 +1305,11 @@ function EmployeeProfile({ employees, setEmployees, currentUser }: { employees: 
             </p>
           </div>
 
-          {/* About / Description Section (WhatsApp Status) */}
+          {/* Status & Bio Section */}
           <div className="rounded-xl border border-sidebar-border bg-sidebar-accent/50 p-3.5 space-y-2">
             <div className="flex items-center justify-between text-xs text-slate-400">
               <span className="font-semibold uppercase tracking-wider text-[10px] text-emerald-400 flex items-center gap-1.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> About / Description
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Status & Bio
               </span>
               {!isEditingAbout ? (
                 <button
@@ -1016,7 +1320,7 @@ function EmployeeProfile({ employees, setEmployees, currentUser }: { employees: 
                     setIsEditingAbout(true);
                   }}
                   className="rounded p-1 text-slate-400 hover:text-emerald-400 transition-colors cursor-pointer"
-                  title="Edit about description"
+                  title="Edit status & bio"
                 >
                   <Pencil size={13} />
                 </button>
@@ -1040,15 +1344,15 @@ function EmployeeProfile({ employees, setEmployees, currentUser }: { employees: 
                   data-testid="textarea-about"
                   onChange={(e) => setAboutDraft(e.target.value)}
                   className="w-full resize-none rounded-lg border border-sidebar-border bg-sidebar p-2 text-xs text-white outline-none focus:border-emerald-500"
-                  placeholder="Add a description about yourself..."
+                  placeholder="Add a status description or bio..."
                   autoFocus
                 />
 
                 {/* Preset Status Chips */}
                 <div>
-                  <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5">Preset statuses</p>
+                  <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5">Quick status presets</p>
                   <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
-                    {WHATSAPP_PRESET_STATUSES.map((preset) => (
+                    {PROFESSIONAL_STATUS_PRESETS.map((preset) => (
                       <button
                         key={preset.label}
                         type="button"
@@ -1096,7 +1400,7 @@ function EmployeeProfile({ employees, setEmployees, currentUser }: { employees: 
               </div>
             )}
             <p className="text-[10px] leading-tight text-slate-500">
-              Your status is visible to everyone in your team.
+              Your status is visible to everyone in your team and organization.
             </p>
           </div>
 
@@ -1194,7 +1498,7 @@ function EmployeeProfile({ employees, setEmployees, currentUser }: { employees: 
             <div>
               <h2 className="font-bold">Personal & contact details</h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                Protected employee details maintained exclusively by HR Administration.
+                Protected details maintained in accordance with institutional policy.
               </p>
             </div>
             <Badge tone="info">Read-only</Badge>
@@ -1236,71 +1540,73 @@ function EmployeeProfile({ employees, setEmployees, currentUser }: { employees: 
           </div>
 
           <div className="mt-6 rounded-xl border border-border bg-muted/40 p-4 text-xs text-muted-foreground">
-            <span className="font-semibold text-foreground">Need to update your details?</span> Employees and managers cannot directly edit protected personal records. Click "Request correction" above to notify HR Administration.
+            <span className="font-semibold text-foreground">Need to update your details?</span> {isHr ? 'HR administrators can update employee records directly from the Employees directory.' : isManager ? 'Managers can request record updates by contacting HR Administration.' : 'Employees cannot directly edit protected personal records. Click "Request correction" above to notify HR Administration.'}
           </div>
         </div>
       </div>
 
-      <div className="mt-8 rounded-2xl border border-card-border bg-card p-6 shadow-sm">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <h2 className="font-bold">Correction requests history</h2>
-            <p className="mt-1 text-xs text-muted-foreground">Requests submitted to HR for profile updates.</p>
+      {(!isHr && !isManager || corrections.length > 0) && (
+        <div className="mt-8 rounded-2xl border border-card-border bg-card p-6 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="font-bold">Correction requests history</h2>
+              <p className="mt-1 text-xs text-muted-foreground">Requests submitted to HR for profile updates.</p>
+            </div>
           </div>
-        </div>
 
-        {corrections.length === 0 ? (
-          <EmptyState
-            title="No correction requests"
-            detail="When you submit requests to update your personal details, they will appear here."
-          />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[600px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-border bg-muted/30 text-xs text-muted-foreground">
-                  <th className="px-4 py-3 font-medium">Submitted</th>
-                  <th className="py-3 font-medium">Requested changes</th>
-                  <th className="py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium">HR resolution</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {corrections.map((req) => (
-                  <tr key={req.id}>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">
-                      {req.submittedAt ? new Date(req.submittedAt).toLocaleDateString() : '—'}
-                    </td>
-                    <td className="py-3 text-sm font-medium max-w-xs">{req.requestedChanges}</td>
-                    <td className="py-3">
-                      <Badge tone={statusTone(req.status === 'RESOLVED' ? 'Approved' : req.status === 'PENDING' ? 'Pending' : 'Rejected')}>
-                        {req.status}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">
-                      {req.resolutionNote ? (
-                        <div>
-                          <p className="font-medium text-foreground">{req.resolutionNote}</p>
-                          {req.resolverName && <p className="text-[11px]">By {req.resolverName}</p>}
-                        </div>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
+          {corrections.length === 0 ? (
+            <EmptyState
+              title="No correction requests"
+              detail="When you submit requests to update your personal details, they will appear here."
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[600px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-muted/30 text-xs text-muted-foreground">
+                    <th className="px-4 py-3 font-medium">Submitted</th>
+                    <th className="py-3 font-medium">Requested changes</th>
+                    <th className="py-3 font-medium">Status</th>
+                    <th className="px-4 py-3 font-medium">HR resolution</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {corrections.map((req) => (
+                    <tr key={req.id}>
+                      <td className="px-4 py-3 text-xs text-muted-foreground">
+                        {req.submittedAt ? new Date(req.submittedAt).toLocaleDateString() : '—'}
+                      </td>
+                      <td className="py-3 text-sm font-medium max-w-xs">{req.requestedChanges}</td>
+                      <td className="py-3">
+                        <Badge tone={statusTone(req.status === 'RESOLVED' ? 'Approved' : req.status === 'PENDING' ? 'Pending' : 'Rejected')}>
+                          {req.status}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground">
+                        {req.resolutionNote ? (
+                          <div>
+                            <p className="font-medium text-foreground">{req.resolutionNote}</p>
+                            {req.resolverName && <p className="text-[11px]">By {req.resolverName}</p>}
+                          </div>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
 function HRDashboard({ employees, attendance, leaves }: { employees: Employee[]; attendance: Attendance[]; leaves: LeaveRequest[] }) {
   const active = employees.filter((e) => e.status === 'Active').length; const present = attendance.filter((a) => a.workDate === today && a.status === 'Present').length; const late = attendance.filter((a) => a.workDate === today && a.status === 'Late').length; const pending = leaves.filter((l) => l.status === 'Pending').length;
-  return <div className="page-enter"><SectionTitle eyebrow={`People operations / ${formatDate(today)}`} title="Good morning, Avery." detail="A compact read on attendance and people activity." action={<Badge tone="info"><ShieldCheck size={12} /> HR administrator</Badge>} /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Active employees" value={String(active)} detail="+2 since last month" icon={Users} accent="teal" /><StatCard label="Present today" value={`${present + late}/${active}`} detail={`${late} late arrival${late === 1 ? '' : 's'} to review`} icon={CalendarCheck2} accent="sky" /><StatCard label="Pending leave" value={String(pending)} detail="Needs your attention" icon={FileText} accent="amber" /><StatCard label="Attendance rate" value="94.6%" detail="Rolling 30-day average" icon={Activity} accent="rose" /></div><div className="mt-8 grid gap-6 lg:grid-cols-[1.2fr_.8fr]"><div className="rounded-2xl border border-card-border bg-card p-6 shadow-sm"><div className="mb-5 flex items-center justify-between"><div><h2 className="font-bold">Today’s attendance</h2><p className="mt-1 text-xs text-muted-foreground">Live view across your active team</p></div><Link href="/hr/attendance" data-testid="link-full-attendance" className="text-xs font-semibold text-primary hover:underline">Full view</Link></div><div className="space-y-2">{employees.slice(0, 4).map((employee) => { const record = attendance.find((item) => item.employeeId === employee.id && item.workDate === today); return <div key={employee.id} data-testid={`row-dashboard-attendance-${employee.id}`} className="flex items-center gap-3 rounded-xl border border-border/70 p-3"><div className="grid h-9 w-9 place-items-center rounded-lg bg-primary/10 text-xs font-bold text-primary">{initials(employee.name)}</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{employee.name}</p><p className="text-xs text-muted-foreground">{employee.department}</p></div><span className="mono hidden text-xs text-muted-foreground sm:block">{record?.checkIn || '—'}</span><Badge tone={statusTone(record?.status || employee.status)}>{record?.status || 'Absent'}</Badge></div>; })}</div></div><div className="rounded-2xl border border-card-border bg-card p-6 shadow-sm"><div className="flex items-center justify-between"><div><h2 className="font-bold">Leave inbox</h2><p className="mt-1 text-xs text-muted-foreground">Requests awaiting review</p></div><Link href="/hr/leave-requests" data-testid="link-review-leave" className="rounded-lg p-2 text-muted-foreground hover:bg-muted"><ArrowRight size={17} /></Link></div><div className="mt-5 space-y-4">{leaves.filter((l) => l.status === 'Pending').map((leave) => <div key={leave.id} className="flex items-start gap-3"><div className="grid h-9 w-9 place-items-center rounded-lg bg-amber-50 text-xs font-bold text-amber-700">{initials(leave.employeeName)}</div><div><p className="text-sm font-semibold">{leave.employeeName}</p><p className="mt-0.5 text-xs text-muted-foreground">{leave.leaveType} · {formatDate(leave.fromDate)}</p></div></div>)}{pending === 0 && <EmptyState title="Inbox is clear" detail="No leave requests need review." />}</div></div></div></div>;
+  return <div className="page-enter"><SectionTitle eyebrow={`People operations / ${formatDate(today)}`} title="Good morning, Avery." detail="A compact read on attendance and people activity." action={<Badge tone="info"><ShieldCheck size={12} /> HR administrator</Badge>} /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Active employees" value={String(active)} detail="+2 since last month" icon={Users} accent="teal" /><StatCard label="Present today" value={`${present + late}/${active}`} detail={`${late} late arrival${late === 1 ? '' : 's'} to review`} icon={CalendarCheck2} accent="sky" /><StatCard label="Pending leave" value={String(pending)} detail="Needs your attention" icon={FileText} accent="amber" /><StatCard label="Attendance rate" value="94.6%" detail="Rolling 30-day average" icon={Activity} accent="rose" /></div><div className="mt-8 grid gap-6 lg:grid-cols-[1.2fr_.8fr]"><div className="rounded-2xl border border-card-border bg-card p-6 shadow-sm"><div className="mb-5 flex items-center justify-between"><div><h2 className="font-bold">Today’s attendance</h2><p className="mt-1 text-xs text-muted-foreground">Live view across your active team</p></div><Link href="/hr/attendance" data-testid="link-full-attendance" className="text-xs font-semibold text-primary hover:underline">Full view</Link></div><div className="space-y-2">{employees.slice(0, 4).map((employee) => { const record = attendance.find((item) => item.employeeId === employee.id && item.workDate === today); return <div key={employee.id} data-testid={`row-dashboard-attendance-${employee.id}`} className="flex items-center gap-3 rounded-xl border border-border/70 p-3"><UserAvatar user={{ id: employee.id, name: employee.name, email: employee.email }} className="h-9 w-9 rounded-lg" /><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{employee.name}</p><p className="text-xs text-muted-foreground">{employee.department}</p></div><span className="mono hidden text-xs text-muted-foreground sm:block">{record?.checkIn || '—'}</span><Badge tone={statusTone(record?.status || employee.status)}>{record?.status || 'Absent'}</Badge></div>; })}</div></div><div className="rounded-2xl border border-card-border bg-card p-6 shadow-sm"><div className="flex items-center justify-between"><div><h2 className="font-bold">Leave inbox</h2><p className="mt-1 text-xs text-muted-foreground">Requests awaiting review</p></div><Link href="/hr/leave-requests" data-testid="link-review-leave" className="rounded-lg p-2 text-muted-foreground hover:bg-muted"><ArrowRight size={17} /></Link></div><div className="mt-5 space-y-4">{leaves.filter((l) => l.status === 'Pending').map((leave) => <div key={leave.id} className="flex items-start gap-3"><UserAvatar name={leave.employeeName} className="h-9 w-9 rounded-lg" /><div><p className="text-sm font-semibold">{leave.employeeName}</p><p className="mt-0.5 text-xs text-muted-foreground">{leave.leaveType} · {formatDate(leave.fromDate)}</p></div></div>)}{pending === 0 && <EmptyState title="Inbox is clear" detail="No leave requests need review." />}</div></div></div></div>;
 }
 
 function HREmployees({ employees, setEmployees }: { employees: Employee[]; setEmployees: (value: Employee[] | ((prev: Employee[]) => Employee[])) => void }) {
@@ -1456,11 +1762,14 @@ function HREmployees({ employees, setEmployees }: { employees: Employee[]; setEm
       {editModalOpen && selectedUser && (
         <div className="mb-6 rounded-2xl border border-primary/30 bg-card p-6 shadow-md">
           <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-bold">Edit personal details: {selectedUser.name}</h3>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Account role: <span className="font-semibold">{selectedUser.role}</span> · Email: {selectedUser.email}
-              </p>
+            <div className="flex items-center gap-3">
+              <UserAvatar user={{ id: selectedUser.id, name: selectedUser.name, email: selectedUser.email }} className="h-12 w-12" />
+              <div>
+                <h3 className="text-lg font-bold">Edit personal details: {selectedUser.name}</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Account role: <span className="font-semibold">{selectedUser.role}</span> · Email: {selectedUser.email}
+                </p>
+              </div>
             </div>
             <button
               type="button"
@@ -1667,9 +1976,7 @@ function HREmployees({ employees, setEmployees }: { employees: Employee[]; setEm
                 <tr key={employee.id} data-testid={`row-employee-${employee.id}`} className="transition-colors hover:bg-muted/30">
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-3">
-                      <div className="grid h-9 w-9 place-items-center rounded-lg bg-primary/10 text-xs font-bold text-primary">
-                        {initials(employee.name)}
-                      </div>
+                      <UserAvatar user={{ id: employee.id, name: employee.name, email: employee.email }} />
                       <div>
                         <p className="font-semibold">{employee.name}</p>
                         <p className="mt-0.5 text-xs text-muted-foreground">{employee.email}</p>
@@ -1724,7 +2031,7 @@ function HRLeaveRequests({ leaves, setLeaves }: { leaves: LeaveRequest[]; setLea
         <div key={leave.id} data-testid={`card-request-${leave.id}`} className="rounded-2xl border border-card-border bg-card p-5 shadow-sm">
           <div className="flex flex-col gap-4 md:flex-row md:items-center">
             <div className="flex min-w-0 flex-1 items-center gap-3">
-              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-primary/10 text-sm font-bold text-primary">{initials(leave.employeeName)}</div>
+              <UserAvatar name={leave.employeeName} className="h-11 w-11 rounded-xl shadow-xs" textClassName="text-sm" />
               <div className="min-w-0"><p className="font-semibold">{leave.employeeName}</p><p className="mt-1 text-xs text-muted-foreground">{leave.leaveType} · Applied {formatDate(leave.appliedDate)}</p></div>
             </div>
             <div className="grid grid-cols-2 gap-7 text-sm">
@@ -1743,7 +2050,7 @@ function HRLeaveRequests({ leaves, setLeaves }: { leaves: LeaveRequest[]; setLea
 
 function HRAttendance({ attendance, employees }: { attendance: Attendance[]; employees: Employee[] }) {
   const [date, setDate] = useState(today); const records = employees.map((employee) => ({ employee, record: attendance.find((item) => item.employeeId === employee.id && item.workDate === date) }));
-  return <div className="page-enter"><SectionTitle eyebrow="People operations" title="Attendance" detail="Daily presence, punctuality, and working hours." action={<div className="flex items-center gap-2"><input data-testid="input-attendance-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-10 rounded-lg border border-input bg-card px-3 text-sm outline-none focus:border-primary" /><Button testId="button-attendance-export" variant="secondary" onClick={() => window.print()}><Download size={15} /> Export</Button></div>} /><div className="grid gap-4 sm:grid-cols-3"><StatCard label="Present" value={String(records.filter((x) => x.record?.status === 'Present').length)} detail="On time today" icon={CheckCircle2} accent="teal" /><StatCard label="Late arrivals" value={String(records.filter((x) => x.record?.status === 'Late').length)} detail="Review patterns over time" icon={Clock3} accent="amber" /><StatCard label="Not recorded" value={String(records.filter((x) => !x.record || x.record.status === 'Absent').length)} detail="Could require follow-up" icon={CircleHelp} accent="rose" /></div><div className="mt-6 rounded-2xl border border-card-border bg-card p-5 shadow-sm"><div className="mb-4 flex items-center gap-2"><CalendarDays size={18} className="text-primary" /><h2 className="font-bold">Daily register · {formatDate(date)}</h2></div><div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead><tr className="border-b border-border text-xs text-muted-foreground"><th className="pb-3 font-medium">Employee</th><th className="pb-3 font-medium">Team</th><th className="pb-3 font-medium">Check in</th><th className="pb-3 font-medium">Check out</th><th className="pb-3 font-medium">Hours</th><th className="pb-3 font-medium">Status</th></tr></thead><tbody className="divide-y divide-border">{records.map(({ employee, record }) => <tr key={employee.id} data-testid={`row-hr-attendance-${employee.id}`}><td className="py-4 font-semibold">{employee.name}</td><td className="py-4 text-muted-foreground">{employee.department}</td><td className="mono py-4 text-xs">{record?.checkIn || '—'}</td><td className="mono py-4 text-xs">{record?.checkOut || '—'}</td><td className="py-4 text-muted-foreground">{record?.workingHours || '—'}</td><td className="py-4"><Badge tone={statusTone(record?.status || 'Absent')}>{record?.status || 'Absent'}</Badge></td></tr>)}</tbody></table></div></div></div>;
+  return <div className="page-enter"><SectionTitle eyebrow="People operations" title="Attendance" detail="Daily presence, punctuality, and working hours." action={<div className="flex items-center gap-2"><input data-testid="input-attendance-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-10 rounded-lg border border-input bg-card px-3 text-sm outline-none focus:border-primary" /><Button testId="button-attendance-export" variant="secondary" onClick={() => window.print()}><Download size={15} /> Export</Button></div>} /><div className="grid gap-4 sm:grid-cols-3"><StatCard label="Present" value={String(records.filter((x) => x.record?.status === 'Present').length)} detail="On time today" icon={CheckCircle2} accent="teal" /><StatCard label="Late arrivals" value={String(records.filter((x) => x.record?.status === 'Late').length)} detail="Review patterns over time" icon={Clock3} accent="amber" /><StatCard label="Not recorded" value={String(records.filter((x) => !x.record || x.record.status === 'Absent').length)} detail="Could require follow-up" icon={CircleHelp} accent="rose" /></div><div className="mt-6 rounded-2xl border border-card-border bg-card p-5 shadow-sm"><div className="mb-4 flex items-center gap-2"><CalendarDays size={18} className="text-primary" /><h2 className="font-bold">Daily register · {formatDate(date)}</h2></div><div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead><tr className="border-b border-border text-xs text-muted-foreground"><th className="pb-3 font-medium">Employee</th><th className="pb-3 font-medium">Team</th><th className="pb-3 font-medium">Check in</th><th className="pb-3 font-medium">Check out</th><th className="pb-3 font-medium">Hours</th><th className="pb-3 font-medium">Status</th></tr></thead><tbody className="divide-y divide-border">{records.map(({ employee, record }) => <tr key={employee.id} data-testid={`row-hr-attendance-${employee.id}`}><td className="py-4"><div className="flex items-center gap-2.5"><UserAvatar user={{ id: employee.id, name: employee.name, email: employee.email }} className="h-8 w-8" /><span className="font-semibold">{employee.name}</span></div></td><td className="py-4 text-muted-foreground">{employee.department}</td><td className="mono py-4 text-xs">{record?.checkIn || '—'}</td><td className="mono py-4 text-xs">{record?.checkOut || '—'}</td><td className="py-4 text-muted-foreground">{record?.workingHours || '—'}</td><td className="py-4"><Badge tone={statusTone(record?.status || 'Absent')}>{record?.status || 'Absent'}</Badge></td></tr>)}</tbody></table></div></div></div>;
 }
 
 function HRReports({ attendance, leaves }: { attendance: Attendance[]; leaves: LeaveRequest[] }) {
@@ -1906,8 +2213,13 @@ function ManagerDashboard() {
                 {pendingRegistrations.map((reg) => (
                   <tr key={reg.id} data-testid={`row-manager-registration-${reg.id}`}>
                     <td className="px-4 py-3">
-                      <p className="font-semibold">{reg.name}</p>
-                      <p className="text-xs text-muted-foreground">{reg.email}</p>
+                      <div className="flex items-center gap-3">
+                        <UserAvatar user={{ id: reg.id, name: reg.name, email: reg.email }} />
+                        <div>
+                          <p className="font-semibold">{reg.name}</p>
+                          <p className="text-xs text-muted-foreground">{reg.email}</p>
+                        </div>
+                      </div>
                     </td>
                     <td className="py-3 text-xs text-muted-foreground">
                       {reg.createdAt ? new Date(reg.createdAt).toLocaleDateString() : '—'}
@@ -1968,9 +2280,12 @@ function ManagerDashboard() {
           <div className="divide-y divide-border">
             {employees.map((employee) => (
               <div key={employee.id} className="flex items-center justify-between gap-3 py-3">
-                <div>
-                  <p className="text-sm font-semibold">{employee.name}</p>
-                  <p className="text-xs text-muted-foreground">{employee.email}</p>
+                <div className="flex items-center gap-3">
+                  <UserAvatar user={{ id: employee.id, name: employee.name, email: employee.email, employeeId: employee.employeeId }} />
+                  <div>
+                    <p className="text-sm font-semibold">{employee.name}</p>
+                    <p className="text-xs text-muted-foreground">{employee.email}</p>
+                  </div>
                 </div>
                 <Badge tone={statusTone(employee.status)}>{employee.status}</Badge>
               </div>
@@ -2258,9 +2573,7 @@ function HRRegistrationsPage() {
                 <tr key={item.id} data-testid={`row-registration-${item.id}`} className="transition-colors hover:bg-muted/30">
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-3">
-                      <div className="grid h-9 w-9 place-items-center rounded-lg bg-primary/10 text-xs font-bold text-primary">
-                        {initials(item.name)}
-                      </div>
+                      <UserAvatar user={{ id: item.id, name: item.name, email: item.email }} />
                       <div>
                         <p className="font-semibold">{item.name}</p>
                         <p className="mt-0.5 text-xs text-muted-foreground">{item.email}</p>
@@ -2660,7 +2973,7 @@ function AppContent() {
     return <Shell role={role} setRole={setRole} onSignOut={signOut} currentUser={currentUser}>{component}</Shell>;
   };
 
-  return <Switch><Route path="/"><BackendSignIn setRole={setRole} onSignIn={signIn} /></Route><Route path="/employee/dashboard">{page(<EmployeeDashboard employees={employees} attendance={attendance} leaves={leaves} />)}</Route><Route path="/employee/attendance">{page(<EmployeeAttendance attendance={attendance} setAttendance={setAttendance} />)}</Route><Route path="/employee/leave">{page(<EmployeeLeave leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/employee/profile">{page(<EmployeeProfile employees={employees} setEmployees={setEmployees} currentUser={currentUser} />)}</Route><Route path="/manager/dashboard">{page(<ManagerDashboard />)}</Route><Route path="/hr/dashboard">{hrPage(<HRDashboard employees={employees} attendance={attendance} leaves={leaves} />)}</Route><Route path="/hr/registrations">{hrPage(<HRRegistrationsPage />)}</Route><Route path="/hr/employees">{hrPage(<HREmployees employees={employees} setEmployees={setEmployees} />)}</Route><Route path="/hr/access">{hrPage(<HRAccessPage />)}</Route><Route path="/hr/leave-requests">{hrPage(<HRLeaveRequests leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/hr/attendance">{hrPage(<HRAttendance attendance={attendance} employees={employees} />)}</Route><Route path="/hr/reports">{hrPage(<HRReports attendance={attendance} leaves={leaves} />)}</Route><Route path="/settings">{page(<SettingsPage role={role} />)}</Route><Route><BackendSignIn setRole={setRole} onSignIn={signIn} /></Route></Switch>;
+  return <Switch><Route path="/"><BackendSignIn setRole={setRole} onSignIn={signIn} /></Route><Route path="/employee/dashboard">{page(<EmployeeDashboard employees={employees} attendance={attendance} leaves={leaves} />)}</Route><Route path="/employee/attendance">{page(<EmployeeAttendance attendance={attendance} setAttendance={setAttendance} />)}</Route><Route path="/employee/leave">{page(<EmployeeLeave leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/employee/profile">{page(<EmployeeProfile role={role} employees={employees} setEmployees={setEmployees} currentUser={currentUser} />)}</Route><Route path="/manager/dashboard">{page(<ManagerDashboard />)}</Route><Route path="/hr/dashboard">{hrPage(<HRDashboard employees={employees} attendance={attendance} leaves={leaves} />)}</Route><Route path="/hr/registrations">{hrPage(<HRRegistrationsPage />)}</Route><Route path="/hr/employees">{hrPage(<HREmployees employees={employees} setEmployees={setEmployees} />)}</Route><Route path="/hr/access">{hrPage(<HRAccessPage />)}</Route><Route path="/hr/leave-requests">{hrPage(<HRLeaveRequests leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/hr/attendance">{hrPage(<HRAttendance attendance={attendance} employees={employees} />)}</Route><Route path="/hr/reports">{hrPage(<HRReports attendance={attendance} leaves={leaves} />)}</Route><Route path="/settings">{page(<SettingsPage role={role} />)}</Route><Route><BackendSignIn setRole={setRole} onSignIn={signIn} /></Route></Switch>;
 }
 function Router() { return <ErrorBoundary resetKey={window.location.pathname}><AppContent /></ErrorBoundary>; }
 function App() { return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><Router /></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>; }
