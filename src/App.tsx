@@ -5,9 +5,9 @@ import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import {
   Activity, ArrowRight, BarChart3, Bell, CalendarCheck2,
-  CalendarDays, Check, CheckCircle2, ChevronDown, CircleHelp, Clock3, Download,
-  FileText, Filter, LayoutDashboard, ListFilter, LogOut, Menu, Pencil, Plus,
-  Search, Settings, ShieldCheck, UserCheck, UserCog, UserRound, Users,
+  CalendarDays, Camera, Check, CheckCircle2, ChevronDown, CircleHelp, Clock3, Download,
+  Eye, FileText, Filter, LayoutDashboard, ListFilter, LogOut, Menu, Pencil, Plus,
+  Search, Settings, ShieldCheck, Trash2, UserCheck, UserCog, UserRound, Users,
   X, XCircle
 } from 'lucide-react';
 import { Link, Route, Switch, Router as WouterRouter, useLocation } from 'wouter';
@@ -137,8 +137,64 @@ function formatDate(value: string) {
   if (!value) return '—';
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(`${value}T12:00:00`));
 }
-function initials(name: string) { return name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(); }
+function initials(name: string) {
+  if (!name) return 'U';
+  const parts = name.split(' ').filter(Boolean);
+  return (parts.map((part) => part[0]).join('').slice(0, 2).toUpperCase()) || 'U';
+}
 function cx(...parts: Array<string | false | undefined>) { return parts.filter(Boolean).join(' '); }
+
+type WhatsAppProfileData = {
+  photo: string | null;
+  about: string;
+  displayName?: string;
+};
+
+const WHATSAPP_PRESET_STATUSES = [
+  { label: 'Available', emoji: '🟢' },
+  { label: 'Busy', emoji: '🔴' },
+  { label: 'At work', emoji: '💼' },
+  { label: 'In a meeting', emoji: '📅' },
+  { label: 'Working remotely', emoji: '🏠' },
+  { label: 'On leave', emoji: '🌴' },
+  { label: 'Urgent calls only', emoji: '📞' },
+  { label: 'Hey there! I am using Meridian.', emoji: '👋' },
+];
+
+function getProfileStorageKey(userEmailOrId?: string | number) {
+  const identifier = userEmailOrId ? String(userEmailOrId).toLowerCase().trim() : 'default';
+  return `meridian_whatsapp_profile_${identifier}`;
+}
+
+function loadWhatsAppProfile(userEmailOrId?: string | number): WhatsAppProfileData {
+  try {
+    const raw = localStorage.getItem(getProfileStorageKey(userEmailOrId));
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        photo: parsed.photo || null,
+        about: parsed.about || 'Available',
+        displayName: parsed.displayName || '',
+      };
+    }
+  } catch {
+    // fallback
+  }
+  return {
+    photo: null,
+    about: 'Available',
+    displayName: '',
+  };
+}
+
+function saveWhatsAppProfile(userEmailOrId: string | number | undefined, data: WhatsAppProfileData) {
+  try {
+    localStorage.setItem(getProfileStorageKey(userEmailOrId), JSON.stringify(data));
+    window.dispatchEvent(new CustomEvent('meridian-profile-updated', { detail: { identifier: userEmailOrId, ...data } }));
+  } catch (e) {
+    console.error('Failed to save profile in localStorage', e);
+  }
+}
 
 function formatGender(value?: string | null): string {
   if (!value) return 'Not specified';
@@ -185,7 +241,7 @@ function LogoMark() {
   return <div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-primary text-primary-foreground shadow-md"><Clock3 size={21} strokeWidth={2.5} /></div><div><p className="text-[15px] font-bold leading-none tracking-tight text-white">Meridian</p><p className="mt-1 text-[10px] font-semibold uppercase tracking-[.18em] text-slate-400">People operations</p></div></div>;
 }
 
-function Shell({ role, setRole, onSignOut, children }: { role: Role; setRole: (role: Role) => void; onSignOut: () => void; children: ReactNode }) {
+function Shell({ role, setRole, onSignOut, currentUser, children }: { role: Role; setRole: (role: Role) => void; onSignOut: () => void; currentUser?: AuthUser | null; children: ReactNode }) {
   const [location, setLocation] = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   const employeeNav = [{ href: '/employee/dashboard', label: 'Overview', icon: LayoutDashboard }, { href: '/employee/attendance', label: 'My attendance', icon: CalendarCheck2 }, { href: '/employee/leave', label: 'Leave', icon: FileText }, { href: '/employee/profile', label: 'Profile', icon: UserRound }];
@@ -194,10 +250,37 @@ function Shell({ role, setRole, onSignOut, children }: { role: Role; setRole: (r
   const nav = role === 'hr' ? hrNav : role === 'manager' ? managerNav : employeeNav;
   const active = (href: string) => location === href;
   const navigate = (href: string) => { setLocation(href); setMenuOpen(false); };
+
+  const userIdentifier = currentUser?.email || (role === 'hr' ? 'hr' : 'employee');
+  const [userProfile, setUserProfile] = useState(() => loadWhatsAppProfile(userIdentifier));
+
+  useEffect(() => {
+    setUserProfile(loadWhatsAppProfile(userIdentifier));
+    const handleUpdate = () => {
+      setUserProfile(loadWhatsAppProfile(userIdentifier));
+    };
+    window.addEventListener('meridian-profile-updated', handleUpdate);
+    return () => window.removeEventListener('meridian-profile-updated', handleUpdate);
+  }, [userIdentifier]);
+
+  const defaultName = role === 'hr' ? 'Avery Morgan' : 'Maya Chen';
+  const displayName = userProfile.displayName || currentUser?.name || defaultName;
+
   return <div className="grain min-h-[100dvh] bg-background">
     <aside className={cx('fixed inset-y-0 left-0 z-40 flex w-[252px] flex-col bg-sidebar px-4 py-5 transition-transform duration-300 lg:translate-x-0', menuOpen ? 'translate-x-0' : '-translate-x-full')}>
       <LogoMark />
-      <div className="mt-9 flex items-center gap-2 rounded-xl border border-sidebar-border bg-sidebar-accent px-3 py-2.5"><div className="grid h-8 w-8 place-items-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground text-xs font-bold">{role === 'hr' ? 'AM' : 'MC'}</div><div className="min-w-0"><p className="truncate text-xs font-semibold text-sidebar-foreground">{role === 'hr' ? 'Avery Morgan' : 'Maya Chen'}</p><p className="text-[10px] text-slate-400">{role === 'hr' ? 'HR administrator' : role === 'manager' ? 'Manager' : 'Employee'}</p></div><ChevronDown size={15} className="ml-auto text-slate-400" /></div>
+      <div className="mt-9 flex items-center gap-2 rounded-xl border border-sidebar-border bg-sidebar-accent px-3 py-2.5">
+        {userProfile.photo ? (
+          <img src={userProfile.photo} alt="Avatar" className="h-8 w-8 rounded-full object-cover border border-emerald-500/50 shadow-sm" />
+        ) : (
+          <div className="grid h-8 w-8 place-items-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground text-xs font-bold">{initials(displayName)}</div>
+        )}
+        <div className="min-w-0">
+          <p className="truncate text-xs font-semibold text-sidebar-foreground">{displayName}</p>
+          <p className="text-[10px] text-slate-400">{role === 'hr' ? 'HR administrator' : role === 'manager' ? 'Manager' : 'Employee'}</p>
+        </div>
+        <ChevronDown size={15} className="ml-auto text-slate-400" />
+      </div>
       <div className="mono mb-3 mt-8 px-3 text-[10px] font-bold uppercase tracking-[.18em] text-slate-500">{role === 'hr' ? 'Workspace' : role === 'manager' ? 'Manager workspace' : 'My workspace'}</div>
       <nav className="space-y-1">{nav.map(({ href, label, icon: Icon }) => <Link key={href} href={href} data-testid={`link-${label.toLowerCase().replaceAll(' ', '-')}`} className={cx('group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors', active(href) ? 'bg-sidebar-primary text-sidebar-primary-foreground shadow-sm' : 'text-slate-400 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground')}><Icon size={18} /><span>{label}</span>{label === 'Leave requests' && <span className="ml-auto rounded-full bg-amber-400 px-1.5 py-0.5 text-[10px] font-bold text-amber-950">1</span>}</Link>)}</nav>
       <div className="mono mb-3 mt-8 px-3 text-[10px] font-bold uppercase tracking-[.18em] text-slate-500">Account</div>
@@ -207,7 +290,19 @@ function Shell({ role, setRole, onSignOut, children }: { role: Role; setRole: (r
     </aside>
     {menuOpen && <button aria-label="Close menu" data-testid="button-close-menu" onClick={() => setMenuOpen(false)} className="fixed inset-0 z-30 bg-slate-950/30 lg:hidden" />}
     <div className="lg:pl-[252px]">
-      <header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-border/80 bg-background/90 px-5 backdrop-blur-md md:px-8"><button data-testid="button-open-menu" onClick={() => setMenuOpen(true)} className="rounded-lg p-2 text-muted-foreground hover:bg-muted lg:hidden"><Menu size={21} /></button><div className="hidden text-sm text-muted-foreground lg:block">{role === 'hr' ? 'People operations / Overview' : role === 'manager' ? 'Manager workspace / Assigned employees' : 'Employee workspace / Overview'}</div><div className="ml-auto flex items-center gap-3"><div className="hidden items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground sm:flex"><span className="h-2 w-2 rounded-full bg-emerald-500" /> Backend session</div><button data-testid="button-notifications" onClick={() => window.alert('No new notifications in this local demo.')} className="relative rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"><Bell size={19} /><span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-accent" /></button><div className="grid h-9 w-9 place-items-center rounded-full bg-primary/10 text-xs font-bold text-primary">{role === 'hr' ? 'AM' : 'MC'}</div></div></header>
+      <header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-border/80 bg-background/90 px-5 backdrop-blur-md md:px-8">
+        <button data-testid="button-open-menu" onClick={() => setMenuOpen(true)} className="rounded-lg p-2 text-muted-foreground hover:bg-muted lg:hidden"><Menu size={21} /></button>
+        <div className="hidden text-sm text-muted-foreground lg:block">{role === 'hr' ? 'People operations / Overview' : role === 'manager' ? 'Manager workspace / Assigned employees' : 'Employee workspace / Overview'}</div>
+        <div className="ml-auto flex items-center gap-3">
+          <div className="hidden items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground sm:flex"><span className="h-2 w-2 rounded-full bg-emerald-500" /> Backend session</div>
+          <button data-testid="button-notifications" onClick={() => window.alert('No new notifications in this local demo.')} className="relative rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"><Bell size={19} /><span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-accent" /></button>
+          {userProfile.photo ? (
+            <img src={userProfile.photo} alt="Avatar" className="h-9 w-9 rounded-full object-cover border border-emerald-500/50 shadow-sm" />
+          ) : (
+            <div className="grid h-9 w-9 place-items-center rounded-full bg-primary/10 text-xs font-bold text-primary">{initials(displayName)}</div>
+          )}
+        </div>
+      </header>
       <main className="mx-auto max-w-[1440px] p-5 md:p-8">{children}</main>
     </div>
   </div>;
@@ -497,7 +592,7 @@ function EmployeeLeave({ leaves, setLeaves }: { leaves: LeaveRequest[]; setLeave
   return <div className="page-enter"><SectionTitle eyebrow="My workspace" title="Leave" detail="Plan time away and keep track of your requests." action={<Button testId="button-scroll-leave" onClick={() => document.getElementById('leave-form')?.scrollIntoView({ behavior: 'smooth' })}><Plus size={16} /> New request</Button>} /><div className="grid gap-6 lg:grid-cols-[.8fr_1.2fr]"><form id="leave-form" onSubmit={submit} className="rounded-2xl border border-card-border bg-card p-6 shadow-sm"><div className="mb-5"><h2 className="font-bold">Apply for leave</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Your manager will be notified to review this request.</p></div><div className="space-y-4"><label className="block text-sm font-medium">Leave type<select data-testid="select-leave-type" value={form.leaveType} onChange={(e) => setForm({ ...form, leaveType: e.target.value })} className="mt-2 h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"><option>Annual leave</option><option>Personal leave</option><option>Sick leave</option><option>Study leave</option></select></label><div className="grid gap-3 sm:grid-cols-2"><label className="block text-sm font-medium">From<input data-testid="input-leave-from" required type="date" value={form.fromDate} onChange={(e) => setForm({ ...form, fromDate: e.target.value })} className="mt-2 h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary" /></label><label className="block text-sm font-medium">To<input data-testid="input-leave-to" required type="date" value={form.toDate} onChange={(e) => setForm({ ...form, toDate: e.target.value })} className="mt-2 h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary" /></label></div><label className="block text-sm font-medium">Reason<textarea data-testid="input-leave-reason" required value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} rows={4} placeholder="Add a short note for your manager" className="mt-2 w-full resize-none rounded-lg border border-input bg-background p-3 text-sm outline-none placeholder:text-muted-foreground focus:border-primary" /></label><Button type="submit" testId="button-submit-leave" className="w-full">Submit request <ArrowRight size={16} /></Button>{notice && <p className="flex items-center gap-2 text-xs font-semibold text-emerald-700"><CheckCircle2 size={15} /> {notice}</p>}</div></form><div className="rounded-2xl border border-card-border bg-card p-6 shadow-sm"><div className="mb-5 flex items-center justify-between"><div><h2 className="font-bold">Leave history</h2><p className="mt-1 text-xs text-muted-foreground">{mine.length} requests on record</p></div><div className="rounded-xl bg-amber-50 px-3 py-2 text-center"><p className="text-[10px] uppercase tracking-wider text-amber-700">Available</p><p className="mt-0.5 text-lg font-bold text-amber-800">14d</p></div></div><div className="space-y-3">{mine.map((leave) => <div key={leave.id} data-testid={`card-leave-${leave.id}`} className="rounded-xl border border-border p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold">{leave.leaveType}</p><p className="mt-1 text-xs text-muted-foreground">{formatDate(leave.fromDate)} — {formatDate(leave.toDate)}</p></div><Badge tone={statusTone(leave.status)}>{leave.status}</Badge></div><p className="mt-3 text-sm text-muted-foreground">{leave.reason}</p><p className="mono mt-3 text-[10px] uppercase tracking-wider text-muted-foreground">Applied {formatDate(leave.appliedDate)} · {leave.id}</p></div>)}</div></div></div></div>;
 }
 
-function EmployeeProfile({ employees }: { employees: Employee[]; setEmployees?: (value: Employee[] | ((prev: Employee[]) => Employee[])) => void }) {
+function EmployeeProfile({ employees, setEmployees, currentUser }: { employees: Employee[]; setEmployees?: (value: Employee[] | ((prev: Employee[]) => Employee[])) => void; currentUser?: AuthUser | null }) {
   const fallbackEmployee = employees[0];
   const [details, setDetails] = useState<PersonalDetails | null>(null);
   const [corrections, setCorrections] = useState<CorrectionRequest[]>([]);
@@ -506,6 +601,102 @@ function EmployeeProfile({ employees }: { employees: Employee[]; setEmployees?: 
   const [correctionModalOpen, setCorrectionModalOpen] = useState(false);
   const [requestedChanges, setRequestedChanges] = useState('');
   const [submittingCorrection, setSubmittingCorrection] = useState(false);
+
+  // WhatsApp-style profile facility states
+  const userIdentifier = currentUser?.email || details?.email || fallbackEmployee.email;
+  const [profileData, setProfileData] = useState<WhatsAppProfileData>(() => loadWhatsAppProfile(userIdentifier));
+  const [isEditingAbout, setIsEditingAbout] = useState(false);
+  const [aboutDraft, setAboutDraft] = useState('');
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
+  const [showPhotoModal, setShowPhotoModal] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (userIdentifier) {
+      setProfileData(loadWhatsAppProfile(userIdentifier));
+    }
+  }, [userIdentifier]);
+
+  const updateProfile = (patch: Partial<WhatsAppProfileData>) => {
+    const updated: WhatsAppProfileData = {
+      ...profileData,
+      ...patch,
+    };
+    setProfileData(updated);
+    saveWhatsAppProfile(userIdentifier, updated);
+  };
+
+  const handlePhotoFile = (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      setError('Please select an image file (PNG, JPG, WebP, etc.).');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setError('Selected image is too large. Please select an image under 10MB.');
+      return;
+    }
+    setError('');
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const dataUrl = e.target?.result as string;
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_DIM = 400;
+        let width = img.width;
+        let height = img.height;
+        if (width > height) {
+          if (width > MAX_DIM) {
+            height = Math.round((height * MAX_DIM) / width);
+            width = MAX_DIM;
+          }
+        } else {
+          if (height > MAX_DIM) {
+            width = Math.round((width * MAX_DIM) / height);
+            height = MAX_DIM;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        const optimizedUrl = canvas.toDataURL('image/jpeg', 0.88);
+        updateProfile({ photo: optimizedUrl });
+        setSuccessMessage('Profile photo updated successfully.');
+      };
+      img.onerror = () => {
+        setError('Unable to process the selected image.');
+      };
+      img.src = dataUrl;
+    };
+    reader.onerror = () => {
+      setError('Failed to read the selected file.');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemovePhoto = () => {
+    updateProfile({ photo: null });
+    setShowPhotoModal(false);
+    setSuccessMessage('Profile photo removed.');
+  };
+
+  const handleSaveAbout = (e?: FormEvent) => {
+    if (e) e.preventDefault();
+    const trimmed = aboutDraft.trim();
+    updateProfile({ about: trimmed || 'Available' });
+    setIsEditingAbout(false);
+    setSuccessMessage('About description updated successfully.');
+  };
+
+  const handleSaveDisplayName = (e?: FormEvent) => {
+    if (e) e.preventDefault();
+    const trimmed = nameDraft.trim();
+    updateProfile({ displayName: trimmed });
+    setIsEditingName(false);
+    setSuccessMessage('Display name updated successfully.');
+  };
 
   const loadData = async () => {
     try {
@@ -562,7 +753,8 @@ function EmployeeProfile({ employees }: { employees: Employee[]; setEmployees?: 
     }
   };
 
-  const name = details?.fullName || fallbackEmployee.name;
+  const baseName = details?.fullName || fallbackEmployee.name;
+  const effectiveName = profileData.displayName || baseName;
   const roleDisplay = details?.role === 'HR_ADMIN' ? 'HR administrator' : 'Active employee';
 
   return (
@@ -645,21 +837,357 @@ function EmployeeProfile({ employees }: { employees: Employee[]; setEmployees?: 
       )}
 
       <div className="grid gap-6 lg:grid-cols-[.45fr_1fr]">
-        <div className="rounded-2xl bg-sidebar p-6 text-sidebar-foreground shadow-md">
-          <div className="grid h-16 w-16 place-items-center rounded-2xl bg-sidebar-primary text-xl font-bold text-sidebar-primary-foreground">
-            {initials(name)}
-          </div>
-          <h2 className="mt-5 text-xl font-bold">{name}</h2>
-          <p className="mt-1 text-sm text-slate-400">{details?.email || fallbackEmployee.email}</p>
-          <div className="mt-8 border-t border-sidebar-border pt-5">
-            <div className="flex items-center gap-2 text-xs text-slate-400">
-              <ShieldCheck size={15} className="text-sidebar-primary" /> {roleDisplay}
+        <div className="rounded-2xl bg-sidebar p-6 text-sidebar-foreground shadow-md space-y-5">
+          {/* WhatsApp Header Badge */}
+          <div className="flex items-center justify-between border-b border-sidebar-border pb-3">
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-emerald-400" />
+              <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400">Profile & About</span>
             </div>
-            <p className="mt-4 text-xs text-slate-400">
+            <span className="text-[10px] text-slate-400">WhatsApp style</span>
+          </div>
+
+          {/* Profile Photo with Camera Badge */}
+          <div className="flex flex-col items-center">
+            <div className="relative group">
+              {profileData.photo ? (
+                <img
+                  src={profileData.photo}
+                  alt={effectiveName}
+                  data-testid="img-profile-photo"
+                  onClick={() => setShowPhotoModal(true)}
+                  className="h-28 w-28 rounded-full object-cover border-4 border-emerald-500/40 shadow-xl cursor-pointer transition-transform hover:scale-105"
+                  title="Click to view full photo"
+                />
+              ) : (
+                <div
+                  data-testid="avatar-profile-initials"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="grid h-28 w-28 place-items-center rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 text-3xl font-bold text-white shadow-xl border-4 border-emerald-500/30 cursor-pointer transition-transform hover:scale-105"
+                  title="Click to change photo"
+                >
+                  {initials(effectiveName)}
+                </div>
+              )}
+
+              {/* Floating Camera Action Badge */}
+              <button
+                type="button"
+                data-testid="button-change-photo"
+                title="Change profile photo"
+                onClick={() => fileInputRef.current?.click()}
+                className="absolute bottom-0 right-0 grid h-9 w-9 place-items-center rounded-full bg-emerald-600 text-white shadow-md hover:bg-emerald-500 active:scale-95 transition-all border-2 border-sidebar cursor-pointer"
+              >
+                <Camera size={16} />
+              </button>
+            </div>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              data-testid="input-photo-file"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handlePhotoFile(file);
+                e.target.value = '';
+              }}
+            />
+
+            {/* Quick action text pills */}
+            <div className="mt-3 flex items-center gap-2">
+              <button
+                type="button"
+                data-testid="button-upload-photo-text"
+                onClick={() => fileInputRef.current?.click()}
+                className="text-[11px] font-medium text-emerald-400 hover:text-emerald-300 transition-colors cursor-pointer"
+              >
+                Change photo
+              </button>
+              {profileData.photo && (
+                <>
+                  <span className="text-slate-600">·</span>
+                  <button
+                    type="button"
+                    data-testid="button-view-photo"
+                    onClick={() => setShowPhotoModal(true)}
+                    className="text-[11px] font-medium text-slate-300 hover:text-white transition-colors cursor-pointer"
+                  >
+                    View
+                  </button>
+                  <span className="text-slate-600">·</span>
+                  <button
+                    type="button"
+                    data-testid="button-remove-photo"
+                    onClick={handleRemovePhoto}
+                    className="text-[11px] font-medium text-rose-400 hover:text-rose-300 transition-colors cursor-pointer"
+                  >
+                    Remove
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Name Section */}
+          <div className="rounded-xl border border-sidebar-border bg-sidebar-accent/50 p-3.5 space-y-1.5">
+            <div className="flex items-center justify-between text-xs text-slate-400">
+              <span className="font-semibold uppercase tracking-wider text-[10px]">Your Name</span>
+              {!isEditingName ? (
+                <button
+                  type="button"
+                  data-testid="button-edit-name"
+                  onClick={() => {
+                    setNameDraft(profileData.displayName || baseName);
+                    setIsEditingName(true);
+                  }}
+                  className="rounded p-1 text-slate-400 hover:text-emerald-400 transition-colors cursor-pointer"
+                  title="Edit name"
+                >
+                  <Pencil size={13} />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsEditingName(false)}
+                  className="rounded p-1 text-slate-400 hover:text-slate-200 cursor-pointer"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+
+            {isEditingName ? (
+              <form onSubmit={handleSaveDisplayName} className="space-y-2 pt-1">
+                <input
+                  type="text"
+                  maxLength={50}
+                  value={nameDraft}
+                  data-testid="input-display-name"
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  className="w-full rounded-lg border border-sidebar-border bg-sidebar px-2.5 py-1.5 text-xs text-white outline-none focus:border-emerald-500"
+                  placeholder="Enter your name"
+                  autoFocus
+                />
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-slate-400">{nameDraft.length}/50</span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingName(false)}
+                      className="rounded px-2 py-1 text-[11px] text-slate-400 hover:text-white cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      data-testid="button-save-name"
+                      className="rounded bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-emerald-500 cursor-pointer"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              </form>
+            ) : (
+              <div>
+                <p className="text-sm font-bold text-sidebar-foreground">{effectiveName}</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">{details?.email || fallbackEmployee.email}</p>
+              </div>
+            )}
+            <p className="text-[10px] leading-tight text-slate-500">
+              This name is visible to your colleagues and team.
+            </p>
+          </div>
+
+          {/* About / Description Section (WhatsApp Status) */}
+          <div className="rounded-xl border border-sidebar-border bg-sidebar-accent/50 p-3.5 space-y-2">
+            <div className="flex items-center justify-between text-xs text-slate-400">
+              <span className="font-semibold uppercase tracking-wider text-[10px] text-emerald-400 flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> About / Description
+              </span>
+              {!isEditingAbout ? (
+                <button
+                  type="button"
+                  data-testid="button-edit-about"
+                  onClick={() => {
+                    setAboutDraft(profileData.about);
+                    setIsEditingAbout(true);
+                  }}
+                  className="rounded p-1 text-slate-400 hover:text-emerald-400 transition-colors cursor-pointer"
+                  title="Edit about description"
+                >
+                  <Pencil size={13} />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsEditingAbout(false)}
+                  className="rounded p-1 text-slate-400 hover:text-slate-200 cursor-pointer"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+
+            {isEditingAbout ? (
+              <form onSubmit={handleSaveAbout} className="space-y-2.5 pt-1">
+                <textarea
+                  rows={2}
+                  maxLength={140}
+                  value={aboutDraft}
+                  data-testid="textarea-about"
+                  onChange={(e) => setAboutDraft(e.target.value)}
+                  className="w-full resize-none rounded-lg border border-sidebar-border bg-sidebar p-2 text-xs text-white outline-none focus:border-emerald-500"
+                  placeholder="Add a description about yourself..."
+                  autoFocus
+                />
+
+                {/* Preset Status Chips */}
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5">Preset statuses</p>
+                  <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
+                    {WHATSAPP_PRESET_STATUSES.map((preset) => (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() => setAboutDraft(`${preset.emoji} ${preset.label}`)}
+                        className="rounded-full border border-sidebar-border bg-sidebar/80 px-2 py-0.5 text-[10px] text-slate-300 hover:border-emerald-500 hover:text-emerald-300 transition-colors flex items-center gap-1 cursor-pointer"
+                      >
+                        <span>{preset.emoji}</span>
+                        <span>{preset.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1 border-t border-sidebar-border/60">
+                  <span className="text-[10px] text-slate-400">{aboutDraft.length}/140</span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingAbout(false)}
+                      className="rounded px-2 py-1 text-[11px] text-slate-400 hover:text-white cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      data-testid="button-save-about"
+                      className="rounded bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-emerald-500 cursor-pointer"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              </form>
+            ) : (
+              <div
+                className="group cursor-pointer rounded-lg p-1.5 hover:bg-sidebar/40 transition-colors"
+                onClick={() => {
+                  setAboutDraft(profileData.about);
+                  setIsEditingAbout(true);
+                }}
+              >
+                <p className="text-xs text-slate-200 leading-relaxed font-medium italic" data-testid="text-about-display">
+                  "{profileData.about}"
+                </p>
+              </div>
+            )}
+            <p className="text-[10px] leading-tight text-slate-500">
+              Your status is visible to everyone in your team.
+            </p>
+          </div>
+
+          {/* Account Meta & Status */}
+          <div className="border-t border-sidebar-border pt-4">
+            <div className="flex items-center gap-2 text-xs text-slate-400">
+              <ShieldCheck size={15} className="text-emerald-400" /> {roleDisplay}
+            </div>
+            <p className="mt-3 text-xs text-slate-400">
               Status <span className="mono ml-2 font-semibold text-sidebar-foreground">{details?.status || 'ACTIVE'}</span>
             </p>
           </div>
         </div>
+
+        {/* Lightbox / Modal for Full Photo Preview */}
+        {showPhotoModal && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+            onClick={() => setShowPhotoModal(false)}
+          >
+            <div
+              className="relative max-w-sm w-full rounded-2xl bg-card border border-border p-6 shadow-2xl text-center"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-border">
+                <h3 className="font-bold text-foreground text-sm">Profile Photo</h3>
+                <button
+                  type="button"
+                  data-testid="button-close-photo-modal"
+                  onClick={() => setShowPhotoModal(false)}
+                  className="rounded-lg p-1 text-muted-foreground hover:bg-muted cursor-pointer"
+                >
+                  <X size={17} />
+                </button>
+              </div>
+
+              <div className="my-5 flex justify-center">
+                {profileData.photo ? (
+                  <img
+                    src={profileData.photo}
+                    alt={effectiveName}
+                    className="h-48 w-48 rounded-full object-cover shadow-xl border-4 border-emerald-500/30"
+                  />
+                ) : (
+                  <div className="grid h-48 w-48 place-items-center rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 text-5xl font-bold text-white shadow-xl">
+                    {initials(effectiveName)}
+                  </div>
+                )}
+              </div>
+
+              <div className="mb-5">
+                <p className="text-base font-bold text-foreground">{effectiveName}</p>
+                <p className="mt-1 text-xs text-muted-foreground italic">"{profileData.about}"</p>
+              </div>
+
+              <div className="flex items-center justify-center gap-2 pt-3 border-t border-border">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  testId="button-modal-change-photo"
+                  onClick={() => {
+                    setShowPhotoModal(false);
+                    fileInputRef.current?.click();
+                  }}
+                >
+                  <Camera size={14} /> Change
+                </Button>
+                {profileData.photo && (
+                  <Button
+                    type="button"
+                    variant="danger"
+                    testId="button-modal-remove-photo"
+                    onClick={handleRemovePhoto}
+                  >
+                    <Trash2 size={14} /> Remove
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  testId="button-modal-close-photo"
+                  onClick={() => setShowPhotoModal(false)}
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="rounded-2xl border border-card-border bg-card p-6 shadow-sm">
           <div className="flex items-center justify-between">
@@ -2100,7 +2628,7 @@ function AppContent() {
   const isManager = authenticated && (currentUser?.effectiveRoles?.includes('MANAGER') || false);
 
   const page = (component: ReactNode) => authenticated
-    ? <Shell role={role} setRole={setRole} onSignOut={signOut}>{component}</Shell>
+    ? <Shell role={role} setRole={setRole} onSignOut={signOut} currentUser={currentUser}>{component}</Shell>
     : <BackendSignIn setRole={setRole} onSignIn={signIn} />;
 
   const hrPage = (component: ReactNode) => {
@@ -2129,10 +2657,10 @@ function AppContent() {
         </Shell>
       );
     }
-    return <Shell role={role} setRole={setRole} onSignOut={signOut}>{component}</Shell>;
+    return <Shell role={role} setRole={setRole} onSignOut={signOut} currentUser={currentUser}>{component}</Shell>;
   };
 
-  return <Switch><Route path="/"><BackendSignIn setRole={setRole} onSignIn={signIn} /></Route><Route path="/employee/dashboard">{page(<EmployeeDashboard employees={employees} attendance={attendance} leaves={leaves} />)}</Route><Route path="/employee/attendance">{page(<EmployeeAttendance attendance={attendance} setAttendance={setAttendance} />)}</Route><Route path="/employee/leave">{page(<EmployeeLeave leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/employee/profile">{page(<EmployeeProfile employees={employees} setEmployees={setEmployees} />)}</Route><Route path="/manager/dashboard">{page(<ManagerDashboard />)}</Route><Route path="/hr/dashboard">{hrPage(<HRDashboard employees={employees} attendance={attendance} leaves={leaves} />)}</Route><Route path="/hr/registrations">{hrPage(<HRRegistrationsPage />)}</Route><Route path="/hr/employees">{hrPage(<HREmployees employees={employees} setEmployees={setEmployees} />)}</Route><Route path="/hr/access">{hrPage(<HRAccessPage />)}</Route><Route path="/hr/leave-requests">{hrPage(<HRLeaveRequests leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/hr/attendance">{hrPage(<HRAttendance attendance={attendance} employees={employees} />)}</Route><Route path="/hr/reports">{hrPage(<HRReports attendance={attendance} leaves={leaves} />)}</Route><Route path="/settings">{page(<SettingsPage role={role} />)}</Route><Route><BackendSignIn setRole={setRole} onSignIn={signIn} /></Route></Switch>;
+  return <Switch><Route path="/"><BackendSignIn setRole={setRole} onSignIn={signIn} /></Route><Route path="/employee/dashboard">{page(<EmployeeDashboard employees={employees} attendance={attendance} leaves={leaves} />)}</Route><Route path="/employee/attendance">{page(<EmployeeAttendance attendance={attendance} setAttendance={setAttendance} />)}</Route><Route path="/employee/leave">{page(<EmployeeLeave leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/employee/profile">{page(<EmployeeProfile employees={employees} setEmployees={setEmployees} currentUser={currentUser} />)}</Route><Route path="/manager/dashboard">{page(<ManagerDashboard />)}</Route><Route path="/hr/dashboard">{hrPage(<HRDashboard employees={employees} attendance={attendance} leaves={leaves} />)}</Route><Route path="/hr/registrations">{hrPage(<HRRegistrationsPage />)}</Route><Route path="/hr/employees">{hrPage(<HREmployees employees={employees} setEmployees={setEmployees} />)}</Route><Route path="/hr/access">{hrPage(<HRAccessPage />)}</Route><Route path="/hr/leave-requests">{hrPage(<HRLeaveRequests leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/hr/attendance">{hrPage(<HRAttendance attendance={attendance} employees={employees} />)}</Route><Route path="/hr/reports">{hrPage(<HRReports attendance={attendance} leaves={leaves} />)}</Route><Route path="/settings">{page(<SettingsPage role={role} />)}</Route><Route><BackendSignIn setRole={setRole} onSignIn={signIn} /></Route></Switch>;
 }
 function Router() { return <ErrorBoundary resetKey={window.location.pathname}><AppContent /></ErrorBoundary>; }
 function App() { return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><Router /></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>; }
