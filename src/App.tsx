@@ -4,10 +4,10 @@ import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import {
-  Activity, ArrowRight, BarChart3, Bell, CalendarCheck2,
+  Activity, AlertCircle, ArrowRight, BarChart3, Bell, CalendarCheck2,
   CalendarDays, Camera, Check, CheckCircle2, ChevronDown, CircleHelp, Clock3, Download,
-  Eye, FileText, Filter, LayoutDashboard, ListFilter, LogOut, Menu, Pencil, Plus,
-  Search, Settings, ShieldCheck, Trash2, UserCheck, UserCog, UserRound, Users,
+  ExternalLink, Eye, File, FileCheck, FilePlus, FileText, Filter, LayoutDashboard, ListFilter, LogOut, Mail, Menu,
+  Paperclip, Pencil, Plus, Search, Settings, ShieldCheck, Trash2, UploadCloud, UserCheck, UserCog, UserRound, Users,
   X, XCircle
 } from 'lucide-react';
 import { Link, Route, Switch, Router as WouterRouter, useLocation } from 'wouter';
@@ -31,7 +31,34 @@ type LeaveStatus = 'Pending' | 'Approved' | 'Rejected';
 type User = { id: string; name: string; email: string; role: Role; status: Status };
 type Employee = { id: string; name: string; email: string; phone: string; department: string; designation: string; joiningDate: string; status: Status };
 type Attendance = { employeeId: string; workDate: string; checkIn: string; checkOut: string; status: AttendanceStatus; workingHours: string };
-type LeaveRequest = { id: string; employeeId: string; employeeName: string; leaveType: string; fromDate: string; toDate: string; reason: string; status: LeaveStatus; appliedDate: string; approvedBy: string };
+
+type LeaveAttachment = {
+  id: string;
+  name: string;
+  size: number;
+  type: string;
+  dataUrl: string;
+  uploadedAt: string;
+};
+
+type LeaveRequest = {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  leaveType: string;
+  fromDate: string;
+  toDate: string;
+  reason: string;
+  status: LeaveStatus;
+  appliedDate: string;
+  approvedBy: string;
+  attachments?: LeaveAttachment[];
+  managerRecommendation?: 'Recommended' | 'Flagged' | 'Pending';
+  managerNote?: string;
+  managerReviewedBy?: string;
+  managerReviewedAt?: string;
+  hrResolutionNote?: string;
+};
 type Department = { id: string; name: string; employeeCount: number };
 type DemoAccount = { email: string; password: string; role: Role };
 
@@ -111,10 +138,101 @@ const seedAttendance: Attendance[] = [
   { employeeId: 'EMP-1042', workDate: '2025-03-17', checkIn: '08:43', checkOut: '17:04', status: 'Present', workingHours: '8h 21m' },
   { employeeId: 'EMP-1042', workDate: '2025-03-14', checkIn: '09:06', checkOut: '17:20', status: 'Late', workingHours: '8h 14m' },
 ];
+const sampleMedicalCertificateDataUrl = 'data:image/svg+xml;utf8,' + encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="780" viewBox="0 0 600 780" fill="none">
+  <rect width="600" height="780" fill="#FFFFFF" rx="8"/>
+  <rect x="20" y="20" width="560" height="740" fill="none" stroke="#2563EB" stroke-width="2" stroke-dasharray="4 4"/>
+  <circle cx="80" cy="80" r="32" fill="#EFF6FF" stroke="#2563EB" stroke-width="2"/>
+  <path d="M80 62 V98 M62 80 H98" stroke="#2563EB" stroke-width="4" stroke-linecap="round"/>
+  <text x="130" y="70" font-family="sans-serif" font-size="20" font-weight="bold" fill="#1E293B">ST. JUDE MEDICAL CLINIC</text>
+  <text x="130" y="90" font-family="sans-serif" font-size="12" fill="#64748B">450 University Ave, Suite 300 · Dept. of Internal Medicine</text>
+  <text x="130" y="105" font-family="sans-serif" font-size="11" fill="#94A3B8">Tel: (555) 019-8234 · Reg No: MED-88421</text>
+  <line x1="50" y1="130" x2="550" y2="130" stroke="#CBD5E1" stroke-width="1.5"/>
+  <text x="300" y="170" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="bold" fill="#0F172A" text-decoration="underline">MEDICAL FITNESS &amp; SICK LEAVE CERTIFICATE</text>
+  <text x="50" y="220" font-family="sans-serif" font-size="13" fill="#334155">Date of Examination: <tspan font-weight="bold">March 10, 2025</tspan></text>
+  <text x="50" y="250" font-family="sans-serif" font-size="13" fill="#334155">Patient Name: <tspan font-weight="bold">Priya Nair (EMP-1028)</tspan></text>
+  <text x="50" y="280" font-family="sans-serif" font-size="13" fill="#334155">Diagnosis: <tspan font-weight="bold">Acute Viral Gastritis &amp; Dehydration</tspan></text>
+  <text x="50" y="320" font-family="sans-serif" font-size="13" fill="#334155">Clinical Advice &amp; Recommendation:</text>
+  <rect x="50" y="335" width="500" height="120" fill="#F8FAFC" stroke="#E2E8F0" rx="6"/>
+  <text x="70" y="365" font-family="sans-serif" font-size="12" fill="#475569">This is to certify that the patient mentioned above was examined and</text>
+  <text x="70" y="388" font-family="sans-serif" font-size="12" fill="#475569">diagnosed with acute viral gastroenteritis with severe dehydration.</text>
+  <text x="70" y="411" font-family="sans-serif" font-size="12" fill="#475569">Complete bed rest and prescribed intravenous hydration therapy were advised</text>
+  <text x="70" y="434" font-family="sans-serif" font-size="12" font-weight="bold" fill="#2563EB">from March 10, 2025 for 1 to 2 days for recovery.</text>
+  <text x="50" y="500" font-family="sans-serif" font-size="12" fill="#64748B">Prescribed Medications: Oral Rehydration Salts, Ondansetron, Probiotics.</text>
+  <text x="50" y="525" font-family="sans-serif" font-size="12" fill="#64748B">Fitness to resume duty: <tspan font-weight="bold" fill="#059669">Expected March 11, 2025 upon follow-up.</tspan></text>
+  <circle cx="460" cy="620" r="45" fill="none" stroke="#DC2626" stroke-width="2" stroke-dasharray="3 3"/>
+  <text x="460" y="615" text-anchor="middle" font-family="sans-serif" font-size="9" font-weight="bold" fill="#DC2626">ST. JUDE CLINIC</text>
+  <text x="460" y="628" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#DC2626">OFFICIAL VERIFIED</text>
+  <text x="460" y="640" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#DC2626">MAR 10, 2025</text>
+  <text x="460" y="690" text-anchor="middle" font-family="sans-serif" font-size="12" font-weight="bold" fill="#1E293B">Dr. Sarah Jenkins, M.D.</text>
+  <text x="460" y="705" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#64748B">Attending Physician · Lic #84920</text>
+</svg>
+`);
+
+function formatFileSize(bytes: number): string {
+  if (!bytes || bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+}
+
 const seedLeaves: LeaveRequest[] = [
-  { id: 'LV-2208', employeeId: 'EMP-1037', employeeName: 'Jon Bell', leaveType: 'Personal leave', fromDate: '2025-03-24', toDate: '2025-03-24', reason: 'Family appointment', status: 'Pending', appliedDate: '2025-03-19', approvedBy: '—' },
-  { id: 'LV-2207', employeeId: 'EMP-1042', employeeName: 'Maya Chen', leaveType: 'Annual leave', fromDate: '2025-04-03', toDate: '2025-04-04', reason: 'Personal travel', status: 'Approved', appliedDate: '2025-03-12', approvedBy: 'Avery Morgan' },
-  { id: 'LV-2202', employeeId: 'EMP-1028', employeeName: 'Priya Nair', leaveType: 'Sick leave', fromDate: '2025-03-10', toDate: '2025-03-10', reason: 'Not feeling well', status: 'Approved', appliedDate: '2025-03-10', approvedBy: 'Avery Morgan' },
+  {
+    id: 'LV-2208',
+    employeeId: 'EMP-1037',
+    employeeName: 'Jon Bell',
+    leaveType: 'Personal leave',
+    fromDate: '2025-03-24',
+    toDate: '2025-03-24',
+    reason: 'Family appointment',
+    status: 'Pending',
+    appliedDate: '2025-03-19',
+    approvedBy: '—',
+    managerRecommendation: 'Pending',
+  },
+  {
+    id: 'LV-2207',
+    employeeId: 'EMP-1042',
+    employeeName: 'Maya Chen',
+    leaveType: 'Annual leave',
+    fromDate: '2025-04-03',
+    toDate: '2025-04-04',
+    reason: 'Personal travel',
+    status: 'Approved',
+    appliedDate: '2025-03-12',
+    approvedBy: 'Avery Morgan',
+    managerRecommendation: 'Recommended',
+    managerNote: 'Travel schedule checked, team coverage confirmed.',
+    managerReviewedBy: 'Jordan Reed (Manager)',
+    managerReviewedAt: '2025-03-12',
+  },
+  {
+    id: 'LV-2202',
+    employeeId: 'EMP-1028',
+    employeeName: 'Priya Nair',
+    leaveType: 'Sick leave',
+    fromDate: '2025-03-10',
+    toDate: '2025-03-10',
+    reason: 'Acute viral gastritis - medical rest advised',
+    status: 'Approved',
+    appliedDate: '2025-03-10',
+    approvedBy: 'Avery Morgan',
+    managerRecommendation: 'Recommended',
+    managerNote: 'Valid clinic certificate submitted by employee and verified.',
+    managerReviewedBy: 'Jordan Reed (Manager)',
+    managerReviewedAt: '2025-03-10',
+    attachments: [
+      {
+        id: 'att-seed-01',
+        name: 'St_Jude_Medical_Certificate_Priya_Nair.svg',
+        size: 14200,
+        type: 'image/svg+xml',
+        dataUrl: sampleMedicalCertificateDataUrl,
+        uploadedAt: '2025-03-10T08:30:00Z',
+      },
+    ],
+  },
 ];
 const seedDepartments: Department[] = [
   { id: 'D-01', name: 'Student Services', employeeCount: 18 },
@@ -148,6 +266,14 @@ type UserProfileData = {
   photo: string | null;
   about: string;
   displayName?: string;
+  fullName?: string;
+  gender?: string;
+  country?: string;
+  language?: string;
+  timeZone?: string;
+  mobileNumber?: string;
+  residentialAddress?: string;
+  secondaryEmails?: Array<{ email: string; addedAt?: string; label?: string }>;
   updatedAt?: number;
 };
 
@@ -178,23 +304,36 @@ function loadAllUserProfiles(): Record<string, UserProfileData> {
 }
 
 function loadUserProfile(identifier?: string | number): UserProfileData {
+  const defaultProfile: UserProfileData = {
+    photo: null,
+    about: 'Available',
+    displayName: '',
+    fullName: '',
+    gender: 'MALE',
+    country: 'United States',
+    language: 'English (US)',
+    timeZone: '(GMT-05:00) Eastern Time (US & Canada)',
+    mobileNumber: '',
+    residentialAddress: '',
+    secondaryEmails: [],
+  };
   if (!identifier) {
-    return { photo: null, about: 'Available', displayName: '' };
+    return defaultProfile;
   }
   const clean = String(identifier).toLowerCase().trim();
   const all = loadAllUserProfiles();
   if (all[clean]) {
-    return all[clean];
+    return { ...defaultProfile, ...all[clean] };
   }
   try {
     const raw = localStorage.getItem(`meridian_profile_${clean}`);
-    if (raw) return JSON.parse(raw);
+    if (raw) return { ...defaultProfile, ...JSON.parse(raw) };
   } catch {}
   try {
     const rawOld = localStorage.getItem(`meridian_whatsapp_profile_${clean}`);
-    if (rawOld) return JSON.parse(rawOld);
+    if (rawOld) return { ...defaultProfile, ...JSON.parse(rawOld) };
   } catch {}
-  return { photo: null, about: 'Available', displayName: '' };
+  return defaultProfile;
 }
 
 function saveUserProfile(
@@ -268,6 +407,109 @@ function getUserPhoto(user?: { email?: string; id?: string | number; employeeId?
     return all[user.name.toLowerCase().trim()].photo;
   }
   return null;
+}
+
+function DocumentViewerModal({
+  doc,
+  onClose,
+}: {
+  doc: LeaveAttachment | null;
+  onClose: () => void;
+}) {
+  if (!doc) return null;
+
+  const isImage = doc.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|svg)$/i.test(doc.name);
+  const isPdf = doc.type.includes('pdf') || /\.pdf$/i.test(doc.name);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-in fade-in duration-150"
+      onClick={onClose}
+    >
+      <div
+        className="relative max-w-3xl w-full rounded-2xl bg-white dark:bg-card border border-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-border px-5 py-4 bg-muted/30">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="grid h-10 w-10 place-items-center rounded-xl bg-blue-100 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 shrink-0">
+              <FileText size={20} />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-sm font-bold text-foreground truncate">{doc.name}</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {formatFileSize(doc.size)} · Uploaded {doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : 'recently'}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <a
+              href={doc.dataUrl}
+              download={doc.name}
+              data-testid="button-download-doc"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted transition-colors cursor-pointer"
+            >
+              <Download size={14} /> Download
+            </a>
+            <button
+              type="button"
+              data-testid="button-close-doc-modal"
+              onClick={onClose}
+              className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        {/* Content Viewer */}
+        <div className="flex-1 overflow-auto p-5 bg-slate-50 dark:bg-muted/10 flex items-center justify-center min-h-[360px]">
+          {isImage ? (
+            <img
+              src={doc.dataUrl}
+              alt={doc.name}
+              className="max-h-[65vh] max-w-full rounded-lg object-contain shadow-md border border-slate-200 dark:border-border"
+            />
+          ) : isPdf ? (
+            <div className="w-full h-[65vh] flex flex-col">
+              <iframe
+                src={doc.dataUrl}
+                title={doc.name}
+                className="w-full flex-1 rounded-lg border border-border bg-white shadow-xs"
+              />
+              <p className="text-center text-xs text-muted-foreground mt-2">
+                If the document does not render directly in your browser,{' '}
+                <a href={doc.dataUrl} target="_blank" rel="noreferrer" className="text-primary underline">
+                  open in new tab
+                </a>{' '}
+                or use Download above.
+              </p>
+            </div>
+          ) : (
+            <div className="text-center p-8 max-w-md">
+              <div className="grid h-16 w-16 place-items-center rounded-2xl bg-primary/10 text-primary mx-auto mb-4">
+                <FileText size={32} />
+              </div>
+              <h4 className="text-base font-bold text-foreground">{doc.name}</h4>
+              <p className="text-xs text-muted-foreground mt-1 mb-5">
+                This document ({formatFileSize(doc.size)}) can be saved and viewed locally on your device.
+              </p>
+              <a
+                href={doc.dataUrl}
+                download={doc.name}
+                className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors"
+              >
+                <Download size={16} /> Download {doc.name}
+              </a>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function UserAvatar({
@@ -392,6 +634,7 @@ function Shell({ role, setRole, onSignOut, currentUser, children }: { role: Role
   ];
   const managerNav = [
     { href: '/manager/dashboard', label: 'Assigned employees', icon: Users },
+    { href: '/manager/leave-review', label: 'Team leave & proofs', icon: FileText },
     { href: '/employee/profile', label: 'My profile', icon: UserRound }
   ];
   const nav = role === 'hr' ? hrNav : role === 'manager' ? managerNav : employeeNav;
@@ -878,10 +1121,357 @@ function EmployeeAttendance({ attendance, setAttendance }: { attendance: Attenda
 }
 
 function EmployeeLeave({ leaves, setLeaves }: { leaves: LeaveRequest[]; setLeaves: (value: LeaveRequest[] | ((prev: LeaveRequest[]) => LeaveRequest[])) => void }) {
-  const [form, setForm] = useState({ leaveType: 'Annual leave', fromDate: '', toDate: '', reason: '' }); const [notice, setNotice] = useState('');
-  const submit = (event: FormEvent) => { event.preventDefault(); if (!form.fromDate || !form.toDate || !form.reason) return; const item: LeaveRequest = { id: `LV-${Math.floor(2209 + Math.random() * 90)}`, employeeId: 'EMP-1042', employeeName: 'Maya Chen', ...form, status: 'Pending', appliedDate: today, approvedBy: '—' }; setLeaves((prev) => [item, ...prev]); setForm({ leaveType: 'Annual leave', fromDate: '', toDate: '', reason: '' }); setNotice('Request submitted for review.'); };
+  const [form, setForm] = useState({ leaveType: 'Sick leave', fromDate: '', toDate: '', reason: '' });
+  const [attachments, setAttachments] = useState<LeaveAttachment[]>([]);
+  const [notice, setNotice] = useState('');
+  const [viewingDoc, setViewingDoc] = useState<LeaveAttachment | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    Array.from(files).forEach((file) => {
+      if (file.size > 10 * 1024 * 1024) {
+        window.alert(`File "${file.name}" exceeds the 10MB limit.`);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const dataUrl = e.target?.result as string;
+        const newAtt: LeaveAttachment = {
+          id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          name: file.name,
+          size: file.size,
+          type: file.type || 'application/octet-stream',
+          dataUrl,
+          uploadedAt: new Date().toISOString(),
+        };
+        setAttachments((prev) => [...prev, newAtt]);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (!form.fromDate || !form.toDate || !form.reason) return;
+    const item: LeaveRequest = {
+      id: `LV-${Math.floor(2209 + Math.random() * 90)}`,
+      employeeId: 'EMP-1042',
+      employeeName: 'Maya Chen',
+      ...form,
+      status: 'Pending',
+      appliedDate: today,
+      approvedBy: '—',
+      attachments: attachments.length > 0 ? attachments : undefined,
+      managerRecommendation: 'Pending',
+    };
+    setLeaves((prev) => [item, ...prev]);
+    setForm({ leaveType: 'Sick leave', fromDate: '', toDate: '', reason: '' });
+    setAttachments([]);
+    setNotice(
+      attachments.length > 0
+        ? `Request submitted with ${attachments.length} proof document(s) for manager & HR review.`
+        : 'Request submitted for review.'
+    );
+    window.setTimeout(() => setNotice(''), 5000);
+  };
+
   const mine = leaves.filter((item) => item.employeeId === 'EMP-1042');
-  return <div className="page-enter"><SectionTitle eyebrow="My workspace" title="Leave" detail="Plan time away and keep track of your requests." action={<Button testId="button-scroll-leave" onClick={() => document.getElementById('leave-form')?.scrollIntoView({ behavior: 'smooth' })}><Plus size={16} /> New request</Button>} /><div className="grid gap-6 lg:grid-cols-[.8fr_1.2fr]"><form id="leave-form" onSubmit={submit} className="rounded-2xl border border-card-border bg-card p-6 shadow-sm"><div className="mb-5"><h2 className="font-bold">Apply for leave</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Your manager will be notified to review this request.</p></div><div className="space-y-4"><label className="block text-sm font-medium">Leave type<select data-testid="select-leave-type" value={form.leaveType} onChange={(e) => setForm({ ...form, leaveType: e.target.value })} className="mt-2 h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"><option>Annual leave</option><option>Personal leave</option><option>Sick leave</option><option>Study leave</option></select></label><div className="grid gap-3 sm:grid-cols-2"><label className="block text-sm font-medium">From<input data-testid="input-leave-from" required type="date" value={form.fromDate} onChange={(e) => setForm({ ...form, fromDate: e.target.value })} className="mt-2 h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary" /></label><label className="block text-sm font-medium">To<input data-testid="input-leave-to" required type="date" value={form.toDate} onChange={(e) => setForm({ ...form, toDate: e.target.value })} className="mt-2 h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary" /></label></div><label className="block text-sm font-medium">Reason<textarea data-testid="input-leave-reason" required value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} rows={4} placeholder="Add a short note for your manager" className="mt-2 w-full resize-none rounded-lg border border-input bg-background p-3 text-sm outline-none placeholder:text-muted-foreground focus:border-primary" /></label><Button type="submit" testId="button-submit-leave" className="w-full">Submit request <ArrowRight size={16} /></Button>{notice && <p className="flex items-center gap-2 text-xs font-semibold text-emerald-700"><CheckCircle2 size={15} /> {notice}</p>}</div></form><div className="rounded-2xl border border-card-border bg-card p-6 shadow-sm"><div className="mb-5 flex items-center justify-between"><div><h2 className="font-bold">Leave history</h2><p className="mt-1 text-xs text-muted-foreground">{mine.length} requests on record</p></div><div className="rounded-xl bg-amber-50 px-3 py-2 text-center"><p className="text-[10px] uppercase tracking-wider text-amber-700">Available</p><p className="mt-0.5 text-lg font-bold text-amber-800">14d</p></div></div><div className="space-y-3">{mine.map((leave) => <div key={leave.id} data-testid={`card-leave-${leave.id}`} className="rounded-xl border border-border p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold">{leave.leaveType}</p><p className="mt-1 text-xs text-muted-foreground">{formatDate(leave.fromDate)} — {formatDate(leave.toDate)}</p></div><Badge tone={statusTone(leave.status)}>{leave.status}</Badge></div><p className="mt-3 text-sm text-muted-foreground">{leave.reason}</p><p className="mono mt-3 text-[10px] uppercase tracking-wider text-muted-foreground">Applied {formatDate(leave.appliedDate)} · {leave.id}</p></div>)}</div></div></div></div>;
+
+  return (
+    <div className="page-enter">
+      <SectionTitle
+        eyebrow="My workspace"
+        title="Leave"
+        detail="Plan time away, submit medical or travel proof, and keep track of your requests."
+        action={
+          <Button
+            testId="button-scroll-leave"
+            onClick={() => document.getElementById('leave-form')?.scrollIntoView({ behavior: 'smooth' })}
+          >
+            <Plus size={16} /> New request
+          </Button>
+        }
+      />
+      <div className="grid gap-6 lg:grid-cols-[.85fr_1.15fr]">
+        <form id="leave-form" onSubmit={submit} className="rounded-2xl border border-card-border bg-card p-6 shadow-sm">
+          <div className="mb-5">
+            <h2 className="font-bold text-foreground">Apply for leave</h2>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              Your manager and HR administration will review this request and examine any attached proof documents.
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            <label className="block text-sm font-medium text-foreground">
+              Leave type
+              <select
+                data-testid="select-leave-type"
+                value={form.leaveType}
+                onChange={(e) => setForm({ ...form, leaveType: e.target.value })}
+                className="mt-2 h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+              >
+                <option value="Sick leave">Sick leave (Requires medical certificate)</option>
+                <option value="Annual leave">Annual leave</option>
+                <option value="Personal leave">Personal leave</option>
+                <option value="Study leave">Study leave</option>
+              </select>
+            </label>
+
+            {form.leaveType === 'Sick leave' && (
+              <div className="rounded-xl border border-blue-200 bg-blue-50/70 dark:border-blue-900 dark:bg-blue-950/30 p-3.5 text-xs text-blue-900 dark:text-blue-300 flex items-start gap-2.5">
+                <AlertCircle size={17} className="text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-blue-950 dark:text-blue-200">Medical Proof Required for Sick Leave</p>
+                  <p className="mt-0.5 text-blue-800/80 dark:text-blue-300/80 leading-relaxed">
+                    Please upload a doctor's certificate, clinic note, or prescription in the document upload section below. The manager and HR will inspect the proof before approving.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block text-sm font-medium text-foreground">
+                From
+                <input
+                  data-testid="input-leave-from"
+                  required
+                  type="date"
+                  value={form.fromDate}
+                  onChange={(e) => setForm({ ...form, fromDate: e.target.value })}
+                  className="mt-2 h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary"
+                />
+              </label>
+              <label className="block text-sm font-medium text-foreground">
+                To
+                <input
+                  data-testid="input-leave-to"
+                  required
+                  type="date"
+                  value={form.toDate}
+                  onChange={(e) => setForm({ ...form, toDate: e.target.value })}
+                  className="mt-2 h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary"
+                />
+              </label>
+            </div>
+
+            <label className="block text-sm font-medium text-foreground">
+              Reason
+              <textarea
+                data-testid="input-leave-reason"
+                required
+                value={form.reason}
+                onChange={(e) => setForm({ ...form, reason: e.target.value })}
+                rows={3}
+                placeholder="Explain the reason for your leave request (e.g., Fever and acute flu, recovery advice from doctor)"
+                className="mt-2 w-full resize-none rounded-lg border border-input bg-background p-3 text-sm outline-none placeholder:text-muted-foreground focus:border-primary"
+              />
+            </label>
+
+            {/* Downside Proof Documents Upload Section */}
+            <div className="rounded-xl border border-dashed border-border/90 bg-muted/20 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-1.5">
+                    <Paperclip size={14} className="text-primary" />
+                    Proof & Supporting Documents
+                  </p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    {form.leaveType === 'Sick leave'
+                      ? 'Upload doctor’s medical certificate, clinic bill, or prescription proof.'
+                      : 'Upload travel tickets, proof documents, or supporting files (optional).'}
+                  </p>
+                </div>
+                {form.leaveType === 'Sick leave' && (
+                  <span className="rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-[10px] font-bold px-2.5 py-0.5">
+                    Doctor Proof
+                  </span>
+                )}
+              </div>
+
+              {/* Drag & Drop Upload Zone */}
+              <div
+                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDragging(false);
+                  handleFileUpload(e.dataTransfer.files);
+                }}
+                onClick={() => fileInputRef.current?.click()}
+                className={cx(
+                  "border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-colors",
+                  isDragging ? "border-primary bg-primary/10" : "border-slate-300 dark:border-border hover:border-primary/60 hover:bg-muted/40"
+                )}
+              >
+                <UploadCloud size={24} className="mx-auto text-muted-foreground mb-1" />
+                <p className="text-xs font-semibold text-foreground">
+                  Click to select files or drag & drop proof documents here
+                </p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  Accepts PDF, PNG, JPG, or DOC up to 10MB per file
+                </p>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept=".pdf,.png,.jpg,.jpeg,.webp,.svg,.doc,.docx"
+                  data-testid="input-leave-document"
+                  className="hidden"
+                  onChange={(e) => {
+                    handleFileUpload(e.target.files);
+                    e.target.value = '';
+                  }}
+                />
+              </div>
+
+              {/* Attached Files List */}
+              {attachments.length > 0 && (
+                <div className="space-y-2 pt-1">
+                  <p className="text-[11px] font-semibold text-foreground">
+                    Attached documents ready to submit ({attachments.length}):
+                  </p>
+                  {attachments.map((att) => (
+                    <div
+                      key={att.id}
+                      className="flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2 text-xs shadow-2xs"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <FileText size={16} className="text-primary shrink-0" />
+                        <div className="min-w-0">
+                          <p className="font-semibold text-foreground truncate">{att.name}</p>
+                          <p className="text-[10px] text-muted-foreground">{formatFileSize(att.size)}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          data-testid="button-preview-attachment"
+                          onClick={(e) => { e.stopPropagation(); setViewingDoc(att); }}
+                          className="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+                          title="Preview document"
+                        >
+                          <Eye size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="button-remove-attachment"
+                          onClick={(e) => { e.stopPropagation(); setAttachments((prev) => prev.filter((a) => a.id !== att.id)); }}
+                          className="rounded p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/20 transition-colors cursor-pointer"
+                          title="Remove document"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <Button type="submit" testId="button-submit-leave" className="w-full">
+              Submit leave request {attachments.length > 0 && `with ${attachments.length} proof document(s)`} <ArrowRight size={16} />
+            </Button>
+
+            {notice && (
+              <p className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 p-2.5 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                <CheckCircle2 size={15} className="shrink-0" /> {notice}
+              </p>
+            )}
+          </div>
+        </form>
+
+        {/* Leave History on the Right */}
+        <div className="rounded-2xl border border-card-border bg-card p-6 shadow-sm">
+          <div className="mb-5 flex items-center justify-between">
+            <div>
+              <h2 className="font-bold text-foreground">Leave history</h2>
+              <p className="mt-1 text-xs text-muted-foreground">{mine.length} requests on record</p>
+            </div>
+            <div className="rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 px-3 py-2 text-center">
+              <p className="text-[10px] uppercase tracking-wider text-amber-700 dark:text-amber-400">Available</p>
+              <p className="mt-0.5 text-lg font-bold text-amber-800 dark:text-amber-300">14d</p>
+            </div>
+          </div>
+
+          <div className="space-y-3.5">
+            {mine.map((leave) => (
+              <div key={leave.id} data-testid={`card-leave-${leave.id}`} className="rounded-xl border border-border p-4 transition-all">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-semibold text-foreground">{leave.leaveType}</p>
+                      {leave.leaveType === 'Sick leave' && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                          Medical
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {formatDate(leave.fromDate)} — {formatDate(leave.toDate)}
+                    </p>
+                  </div>
+                  <Badge tone={statusTone(leave.status)}>{leave.status}</Badge>
+                </div>
+
+                <p className="mt-2.5 text-sm text-muted-foreground">{leave.reason}</p>
+
+                {/* Proof Documents in Leave History */}
+                {leave.attachments && leave.attachments.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-border/60">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="text-[11px] font-semibold text-foreground flex items-center gap-1.5">
+                        <Paperclip size={13} className="text-primary" />
+                        Submitted proof documents ({leave.attachments.length}):
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {leave.attachments.map((doc) => (
+                          <button
+                            key={doc.id}
+                            type="button"
+                            data-testid={`button-view-doc-${doc.id}`}
+                            onClick={() => setViewingDoc(doc)}
+                            className="inline-flex items-center gap-1.5 rounded-md bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 px-2.5 py-1 text-xs font-semibold transition-colors cursor-pointer"
+                          >
+                            <Eye size={12} /> {doc.name.length > 20 ? doc.name.slice(0, 18) + '…' : doc.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Manager & HR Status Notes */}
+                {(leave.managerRecommendation || leave.approvedBy !== '—') && (
+                  <div className="mt-2.5 flex items-center gap-2 text-[11px] text-muted-foreground flex-wrap">
+                    {leave.managerRecommendation && (
+                      <span className={cx(
+                        "font-medium",
+                        leave.managerRecommendation === 'Recommended' ? "text-emerald-700 dark:text-emerald-400" : leave.managerRecommendation === 'Flagged' ? "text-rose-700 dark:text-rose-400" : "text-amber-700 dark:text-amber-400"
+                      )}>
+                        Manager: {leave.managerRecommendation}
+                      </span>
+                    )}
+                    {leave.approvedBy !== '—' && (
+                      <span>· Decided by {leave.approvedBy}</span>
+                    )}
+                  </div>
+                )}
+
+                <p className="mono mt-2.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Applied {formatDate(leave.appliedDate)} · {leave.id}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Document Viewer Lightbox Modal */}
+      <DocumentViewerModal doc={viewingDoc} onClose={() => setViewingDoc(null)} />
+    </div>
+  );
 }
 
 function EmployeeProfile({ role, employees, setEmployees, currentUser }: { role?: Role; employees: Employee[]; setEmployees?: (value: Employee[] | ((prev: Employee[]) => Employee[])) => void; currentUser?: AuthUser | null }) {
@@ -894,33 +1484,154 @@ function EmployeeProfile({ role, employees, setEmployees, currentUser }: { role?
   const [requestedChanges, setRequestedChanges] = useState('');
   const [submittingCorrection, setSubmittingCorrection] = useState(false);
 
-  // Profile facility states
+  // Role detection
   const isHr = role === 'hr' || currentUser?.role === 'HR_ADMIN' || details?.role === 'HR_ADMIN';
   const isManager = role === 'manager' || details?.role === 'MANAGER';
   const roleDisplay = isHr ? 'HR Administrator' : isManager ? 'Manager' : 'Active Employee';
   const fallbackName = isHr ? 'Avery Morgan' : isManager ? 'Jordan Reed' : fallbackEmployee.name;
   const userIdentifier = currentUser?.email || details?.email || fallbackEmployee.email;
+
   const [profileData, setProfileData] = useState<UserProfileData>(() => loadUserProfile(userIdentifier));
-  const [isEditingAbout, setIsEditingAbout] = useState(false);
-  const [aboutDraft, setAboutDraft] = useState('');
-  const [isEditingName, setIsEditingName] = useState(false);
-  const [nameDraft, setNameDraft] = useState('');
+  const [isEditing, setIsEditing] = useState(false);
+
+  // Form states matching the exact layout of the user's reference design
+  const [formFullName, setFormFullName] = useState('');
+  const [formNickName, setFormNickName] = useState('');
+  const [formGender, setFormGender] = useState('MALE');
+  const [formCountry, setFormCountry] = useState('United States');
+  const [formLanguage, setFormLanguage] = useState('English (US)');
+  const [formTimeZone, setFormTimeZone] = useState('(GMT-05:00) Eastern Time (US & Canada)');
+  const [formMobile, setFormMobile] = useState('');
+  const [formAddress, setFormAddress] = useState('');
+  const [formAbout, setFormAbout] = useState('Available');
+
+  // Secondary email state
+  const [addEmailOpen, setAddEmailOpen] = useState(false);
+  const [newEmailInput, setNewEmailInput] = useState('');
+
+  // Photo modal
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const loadData = async () => {
+    try {
+      const data = await authRequest<PersonalDetails>('/api/employee/personal-details');
+      setDetails(data);
+    } catch {
+      setDetails({
+        id: 1,
+        fullName: currentUser?.name || fallbackName,
+        email: currentUser?.email || fallbackEmployee.email,
+        gender: null,
+        dateOfBirth: null,
+        age: null,
+        residentialAddress: null,
+        mobileNumber: fallbackEmployee.phone !== '—' ? fallbackEmployee.phone : null,
+        role: isHr ? 'HR_ADMIN' : isManager ? 'MANAGER' : 'EMPLOYEE',
+        status: 'ACTIVE',
+      });
+    }
+
+    try {
+      const reqs = await authRequest<CorrectionRequest[]>('/api/employee/correction-requests');
+      setCorrections(reqs);
+    } catch {
+      setCorrections([]);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  // Sync profile data on load or when userIdentifier / details change
   useEffect(() => {
     if (userIdentifier) {
-      setProfileData(loadUserProfile(userIdentifier));
+      const p = loadUserProfile(userIdentifier);
+      setProfileData(p);
+      const baseFullName = p.fullName || details?.fullName || currentUser?.name || fallbackName;
+      setFormFullName(baseFullName);
+      setFormNickName(p.displayName || baseFullName.split(' ')[0] || '');
+      setFormGender(normalizeGenderValue(p.gender || details?.gender) || 'MALE');
+      setFormCountry(p.country || 'United States');
+      setFormLanguage(p.language || 'English (US)');
+      setFormTimeZone(p.timeZone || '(GMT-05:00) Eastern Time (US & Canada)');
+      setFormMobile(p.mobileNumber || details?.mobileNumber || (fallbackEmployee.phone !== '—' ? fallbackEmployee.phone : ''));
+      setFormAddress(p.residentialAddress || details?.residentialAddress || '');
+      setFormAbout(p.about || 'Available');
     }
-  }, [userIdentifier]);
+  }, [userIdentifier, details, currentUser, fallbackName]);
 
-  const updateProfile = (patch: Partial<UserProfileData>) => {
+  const handleSaveAll = () => {
     const updated: UserProfileData = {
       ...profileData,
-      ...patch,
+      fullName: formFullName.trim(),
+      displayName: formNickName.trim(),
+      gender: formGender,
+      country: formCountry,
+      language: formLanguage,
+      timeZone: formTimeZone,
+      mobileNumber: formMobile.trim(),
+      residentialAddress: formAddress.trim(),
+      about: formAbout.trim() || 'Available',
     };
     setProfileData(updated);
     saveUserProfile(userIdentifier, updated);
+    setIsEditing(false);
+    setSuccessMessage('Profile details saved successfully.');
+    window.setTimeout(() => setSuccessMessage(''), 4000);
+  };
+
+  const handleCancelEdit = () => {
+    const baseFullName = profileData.fullName || details?.fullName || currentUser?.name || fallbackName;
+    setFormFullName(baseFullName);
+    setFormNickName(profileData.displayName || baseFullName.split(' ')[0] || '');
+    setFormGender(normalizeGenderValue(profileData.gender || details?.gender) || 'MALE');
+    setFormCountry(profileData.country || 'United States');
+    setFormLanguage(profileData.language || 'English (US)');
+    setFormTimeZone(profileData.timeZone || '(GMT-05:00) Eastern Time (US & Canada)');
+    setFormMobile(profileData.mobileNumber || details?.mobileNumber || (fallbackEmployee.phone !== '—' ? fallbackEmployee.phone : ''));
+    setFormAddress(profileData.residentialAddress || details?.residentialAddress || '');
+    setFormAbout(profileData.about || 'Available');
+    setIsEditing(false);
+  };
+
+  const handleAddSecondaryEmail = (e: FormEvent) => {
+    e.preventDefault();
+    const emailToAdd = newEmailInput.trim().toLowerCase();
+    if (!emailToAdd || !emailToAdd.includes('@')) {
+      setError('Please provide a valid email address.');
+      return;
+    }
+    setError('');
+    const currentList = profileData.secondaryEmails || [];
+    if (currentList.some((item) => item.email.toLowerCase() === emailToAdd) || emailToAdd === userIdentifier.toLowerCase()) {
+      setError('This email address is already associated with your account.');
+      return;
+    }
+    const updatedEmails = [...currentList, { email: emailToAdd, addedAt: 'Just now', label: 'Secondary' }];
+    const updated: UserProfileData = {
+      ...profileData,
+      secondaryEmails: updatedEmails,
+    };
+    setProfileData(updated);
+    saveUserProfile(userIdentifier, updated);
+    setNewEmailInput('');
+    setAddEmailOpen(false);
+    setSuccessMessage('Secondary email address added successfully.');
+    window.setTimeout(() => setSuccessMessage(''), 4000);
+  };
+
+  const handleRemoveSecondaryEmail = (emailToRemove: string) => {
+    const updatedEmails = (profileData.secondaryEmails || []).filter((item) => item.email !== emailToRemove);
+    const updated: UserProfileData = {
+      ...profileData,
+      secondaryEmails: updatedEmails,
+    };
+    setProfileData(updated);
+    saveUserProfile(userIdentifier, updated);
+    setSuccessMessage('Email address removed.');
+    window.setTimeout(() => setSuccessMessage(''), 4000);
   };
 
   const handlePhotoFile = (file: File) => {
@@ -958,8 +1669,11 @@ function EmployeeProfile({ role, employees, setEmployees, currentUser }: { role?
         const ctx = canvas.getContext('2d');
         ctx?.drawImage(img, 0, 0, width, height);
         const optimizedUrl = canvas.toDataURL('image/jpeg', 0.88);
-        updateProfile({ photo: optimizedUrl });
+        const updated = { ...profileData, photo: optimizedUrl };
+        setProfileData(updated);
+        saveUserProfile(userIdentifier, updated);
         setSuccessMessage('Profile photo updated successfully.');
+        window.setTimeout(() => setSuccessMessage(''), 4000);
       };
       img.onerror = () => {
         setError('Unable to process the selected image.');
@@ -973,57 +1687,13 @@ function EmployeeProfile({ role, employees, setEmployees, currentUser }: { role?
   };
 
   const handleRemovePhoto = () => {
-    updateProfile({ photo: null });
+    const updated = { ...profileData, photo: null };
+    setProfileData(updated);
+    saveUserProfile(userIdentifier, updated);
     setShowPhotoModal(false);
     setSuccessMessage('Profile photo removed.');
+    window.setTimeout(() => setSuccessMessage(''), 4000);
   };
-
-  const handleSaveAbout = (e?: FormEvent) => {
-    if (e) e.preventDefault();
-    const trimmed = aboutDraft.trim();
-    updateProfile({ about: trimmed || 'Available' });
-    setIsEditingAbout(false);
-    setSuccessMessage('Status & bio updated successfully.');
-  };
-
-  const handleSaveDisplayName = (e?: FormEvent) => {
-    if (e) e.preventDefault();
-    const trimmed = nameDraft.trim();
-    updateProfile({ displayName: trimmed });
-    setIsEditingName(false);
-    setSuccessMessage('Display name updated successfully.');
-  };
-
-  const loadData = async () => {
-    try {
-      const data = await authRequest<PersonalDetails>('/api/employee/personal-details');
-      setDetails(data);
-    } catch {
-      setDetails({
-        id: 1,
-        fullName: currentUser?.name || fallbackName,
-        email: currentUser?.email || fallbackEmployee.email,
-        gender: null,
-        dateOfBirth: null,
-        age: null,
-        residentialAddress: null,
-        mobileNumber: fallbackEmployee.phone !== '—' ? fallbackEmployee.phone : null,
-        role: isHr ? 'HR_ADMIN' : isManager ? 'MANAGER' : 'EMPLOYEE',
-        status: 'ACTIVE',
-      });
-    }
-
-    try {
-      const reqs = await authRequest<CorrectionRequest[]>('/api/employee/correction-requests');
-      setCorrections(reqs);
-    } catch {
-      setCorrections([]);
-    }
-  };
-
-  useEffect(() => {
-    loadData();
-  }, []);
 
   const handleCorrectionSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -1050,554 +1720,707 @@ function EmployeeProfile({ role, employees, setEmployees, currentUser }: { role?
   };
 
   const baseName = details?.fullName || currentUser?.name || fallbackName;
-  const effectiveName = profileData.displayName || baseName;
-  const eyebrowText = isHr ? 'People operations' : isManager ? 'Manager workspace' : 'My workspace';
-  const pageTitle = isHr ? 'Administrator profile' : isManager ? 'Manager profile' : 'Personal profile';
-  const pageDetail = isHr
-    ? 'Manage your administrative profile, public photo, and professional status.'
-    : isManager
-    ? 'Manage your manager profile, public photo, and team status.'
-    : 'View your personal and employment details on record.';
+  const effectiveName = profileData.displayName || formFullName || baseName;
 
   return (
-    <div className="page-enter">
-      <SectionTitle
-        eyebrow={eyebrowText}
-        title={pageTitle}
-        detail={pageDetail}
-        action={
-          !isHr && !isManager ? (
-            <Button
-              testId="button-open-correction-modal"
-              variant="secondary"
-              onClick={() => { setCorrectionModalOpen(true); setError(''); setSuccessMessage(''); }}
-            >
-              <FileText size={15} /> Request correction
-            </Button>
-          ) : undefined
-        }
-      />
+    <div className="page-enter -mx-5 -mt-5 md:-mx-8 md:-mt-8 min-h-screen pb-16 bg-[#f8fafc]/60 dark:bg-background">
+      {/* Ambient Pastel Gradient Top Banner */}
+      <div className="h-44 sm:h-56 w-full bg-gradient-to-r from-[#d8e5ff] via-[#e8efff] via-50% to-[#feefdd] relative overflow-hidden">
+        <div className="absolute inset-0 bg-white/20 backdrop-blur-[1px]" />
+      </div>
 
-      {successMessage && (
-        <p role="alert" className="mb-4 rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-sm font-semibold text-emerald-700">
-          {successMessage}
-        </p>
-      )}
-      {error && (
-        <p role="alert" className="mb-4 rounded-lg bg-rose-50 border border-rose-200 p-3 text-sm font-semibold text-rose-700">
-          {error}
-        </p>
-      )}
-
-      {correctionModalOpen && (
-        <div className="mb-6 rounded-2xl border border-primary/30 bg-primary/5 p-6 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="font-bold text-foreground">Submit personal details correction request</h3>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Personal details are protected and maintained by HR Administration. Describe the changes you are requesting.
-              </p>
-            </div>
-            <button
-              type="button"
-              data-testid="button-close-correction-modal"
-              onClick={() => setCorrectionModalOpen(false)}
-              className="rounded-lg p-2 text-muted-foreground hover:bg-muted"
-            >
-              <X size={17} />
-            </button>
+      {/* Main Floating Profile Card matching the uploaded reference design */}
+      <div className="max-w-4xl mx-auto px-4 sm:px-8 relative -mt-24 sm:-mt-28">
+        {successMessage && (
+          <div role="alert" className="mb-4 rounded-2xl bg-emerald-50 border border-emerald-200 p-3.5 text-sm font-semibold text-emerald-800 shadow-sm flex items-center justify-between">
+            <span className="flex items-center gap-2"><CheckCircle2 size={17} className="text-emerald-600" /> {successMessage}</span>
+            <button type="button" onClick={() => setSuccessMessage('')} className="text-emerald-600 hover:text-emerald-800 p-1"><X size={15} /></button>
           </div>
-          <form onSubmit={handleCorrectionSubmit} className="mt-4 space-y-4">
-            <label className="block text-sm font-medium">
-              Requested changes & explanation
-              <textarea
-                data-testid="input-correction-changes"
-                required
-                rows={3}
-                value={requestedChanges}
-                onChange={(e) => setRequestedChanges(e.target.value)}
-                placeholder="e.g., Please update my mobile number to +1-555-0199 and address to 742 Evergreen Terrace."
-                className="mt-2 w-full resize-none rounded-lg border border-input bg-card p-3 text-sm outline-none focus:border-primary"
-              />
-            </label>
-            <div className="flex items-center gap-2">
-              <Button
-                type="submit"
-                testId="button-submit-correction"
-                disabled={submittingCorrection || !requestedChanges.trim()}
-              >
-                {submittingCorrection ? 'Submitting…' : 'Submit request'}
-              </Button>
-              <Button
-                variant="ghost"
-                testId="button-cancel-correction"
-                onClick={() => setCorrectionModalOpen(false)}
-              >
-                Cancel
-              </Button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      <div className="grid gap-6 lg:grid-cols-[.45fr_1fr]">
-        <div className="rounded-2xl bg-sidebar p-6 text-sidebar-foreground shadow-md space-y-5">
-          {/* Profile Card Header */}
-          <div className="flex items-center justify-between border-b border-sidebar-border pb-3">
-            <div className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-emerald-400" />
-              <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400">Public Profile</span>
-            </div>
-            <span className="text-[10px] text-slate-400">Directory card</span>
+        )}
+        {error && (
+          <div role="alert" className="mb-4 rounded-2xl bg-rose-50 border border-rose-200 p-3.5 text-sm font-semibold text-rose-800 shadow-sm flex items-center justify-between">
+            <span>{error}</span>
+            <button type="button" onClick={() => setError('')} className="text-rose-600 hover:text-rose-800 p-1"><X size={15} /></button>
           </div>
+        )}
 
-          {/* Profile Photo with Camera Badge */}
-          <div className="flex flex-col items-center">
-            <div className="relative group">
-              {profileData.photo ? (
-                <img
-                  src={profileData.photo}
-                  alt={effectiveName}
-                  data-testid="img-profile-photo"
-                  onClick={() => setShowPhotoModal(true)}
-                  className="h-28 w-28 rounded-full object-cover border-4 border-emerald-500/40 shadow-xl cursor-pointer transition-transform hover:scale-105"
-                  title="Click to view full photo"
-                />
-              ) : (
-                <div
-                  data-testid="avatar-profile-initials"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="grid h-28 w-28 place-items-center rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 text-3xl font-bold text-white shadow-xl border-4 border-emerald-500/30 cursor-pointer transition-transform hover:scale-105"
-                  title="Click to change photo"
-                >
-                  {initials(effectiveName)}
-                </div>
-              )}
-
-              {/* Floating Camera Action Badge */}
-              <button
-                type="button"
-                data-testid="button-change-photo"
-                title="Change profile photo"
-                onClick={() => fileInputRef.current?.click()}
-                className="absolute bottom-0 right-0 grid h-9 w-9 place-items-center rounded-full bg-emerald-600 text-white shadow-md hover:bg-emerald-500 active:scale-95 transition-all border-2 border-sidebar cursor-pointer"
-              >
-                <Camera size={16} />
-              </button>
-            </div>
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              data-testid="input-photo-file"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) handlePhotoFile(file);
-                e.target.value = '';
-              }}
-            />
-
-            {/* Quick action text pills */}
-            <div className="mt-3 flex items-center gap-2">
-              <button
-                type="button"
-                data-testid="button-upload-photo-text"
-                onClick={() => fileInputRef.current?.click()}
-                className="text-[11px] font-medium text-emerald-400 hover:text-emerald-300 transition-colors cursor-pointer"
-              >
-                Change photo
-              </button>
-              {profileData.photo && (
-                <>
-                  <span className="text-slate-600">·</span>
-                  <button
-                    type="button"
-                    data-testid="button-view-photo"
-                    onClick={() => setShowPhotoModal(true)}
-                    className="text-[11px] font-medium text-slate-300 hover:text-white transition-colors cursor-pointer"
-                  >
-                    View
-                  </button>
-                  <span className="text-slate-600">·</span>
-                  <button
-                    type="button"
-                    data-testid="button-remove-photo"
-                    onClick={handleRemovePhoto}
-                    className="text-[11px] font-medium text-rose-400 hover:text-rose-300 transition-colors cursor-pointer"
-                  >
-                    Remove
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Name Section */}
-          <div className="rounded-xl border border-sidebar-border bg-sidebar-accent/50 p-3.5 space-y-1.5">
-            <div className="flex items-center justify-between text-xs text-slate-400">
-              <span className="font-semibold uppercase tracking-wider text-[10px]">Your Name</span>
-              {!isEditingName ? (
-                <button
-                  type="button"
-                  data-testid="button-edit-name"
-                  onClick={() => {
-                    setNameDraft(profileData.displayName || baseName);
-                    setIsEditingName(true);
-                  }}
-                  className="rounded p-1 text-slate-400 hover:text-emerald-400 transition-colors cursor-pointer"
-                  title="Edit name"
-                >
-                  <Pencil size={13} />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setIsEditingName(false)}
-                  className="rounded p-1 text-slate-400 hover:text-slate-200 cursor-pointer"
-                >
-                  <X size={13} />
-                </button>
-              )}
-            </div>
-
-            {isEditingName ? (
-              <form onSubmit={handleSaveDisplayName} className="space-y-2 pt-1">
-                <input
-                  type="text"
-                  maxLength={50}
-                  value={nameDraft}
-                  data-testid="input-display-name"
-                  onChange={(e) => setNameDraft(e.target.value)}
-                  className="w-full rounded-lg border border-sidebar-border bg-sidebar px-2.5 py-1.5 text-xs text-white outline-none focus:border-emerald-500"
-                  placeholder="Enter your name"
-                  autoFocus
-                />
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-slate-400">{nameDraft.length}/50</span>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setIsEditingName(false)}
-                      className="rounded px-2 py-1 text-[11px] text-slate-400 hover:text-white cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      data-testid="button-save-name"
-                      className="rounded bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-emerald-500 cursor-pointer"
-                    >
-                      Save
-                    </button>
-                  </div>
-                </div>
-              </form>
-            ) : (
-              <div>
-                <p className="text-sm font-bold text-sidebar-foreground">{effectiveName}</p>
-                <p className="text-[11px] text-slate-400 mt-0.5">{details?.email || fallbackEmployee.email}</p>
-              </div>
-            )}
-            <p className="text-[10px] leading-tight text-slate-500">
-              This name is visible to your colleagues and team.
-            </p>
-          </div>
-
-          {/* Status & Bio Section */}
-          <div className="rounded-xl border border-sidebar-border bg-sidebar-accent/50 p-3.5 space-y-2">
-            <div className="flex items-center justify-between text-xs text-slate-400">
-              <span className="font-semibold uppercase tracking-wider text-[10px] text-emerald-400 flex items-center gap-1.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Status & Bio
-              </span>
-              {!isEditingAbout ? (
-                <button
-                  type="button"
-                  data-testid="button-edit-about"
-                  onClick={() => {
-                    setAboutDraft(profileData.about);
-                    setIsEditingAbout(true);
-                  }}
-                  className="rounded p-1 text-slate-400 hover:text-emerald-400 transition-colors cursor-pointer"
-                  title="Edit status & bio"
-                >
-                  <Pencil size={13} />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setIsEditingAbout(false)}
-                  className="rounded p-1 text-slate-400 hover:text-slate-200 cursor-pointer"
-                >
-                  <X size={13} />
-                </button>
-              )}
-            </div>
-
-            {isEditingAbout ? (
-              <form onSubmit={handleSaveAbout} className="space-y-2.5 pt-1">
-                <textarea
-                  rows={2}
-                  maxLength={140}
-                  value={aboutDraft}
-                  data-testid="textarea-about"
-                  onChange={(e) => setAboutDraft(e.target.value)}
-                  className="w-full resize-none rounded-lg border border-sidebar-border bg-sidebar p-2 text-xs text-white outline-none focus:border-emerald-500"
-                  placeholder="Add a status description or bio..."
-                  autoFocus
-                />
-
-                {/* Preset Status Chips */}
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5">Quick status presets</p>
-                  <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
-                    {PROFESSIONAL_STATUS_PRESETS.map((preset) => (
-                      <button
-                        key={preset.label}
-                        type="button"
-                        onClick={() => setAboutDraft(`${preset.emoji} ${preset.label}`)}
-                        className="rounded-full border border-sidebar-border bg-sidebar/80 px-2 py-0.5 text-[10px] text-slate-300 hover:border-emerald-500 hover:text-emerald-300 transition-colors flex items-center gap-1 cursor-pointer"
-                      >
-                        <span>{preset.emoji}</span>
-                        <span>{preset.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between pt-1 border-t border-sidebar-border/60">
-                  <span className="text-[10px] text-slate-400">{aboutDraft.length}/140</span>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setIsEditingAbout(false)}
-                      className="rounded px-2 py-1 text-[11px] text-slate-400 hover:text-white cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      data-testid="button-save-about"
-                      className="rounded bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-emerald-500 cursor-pointer"
-                    >
-                      Save
-                    </button>
-                  </div>
-                </div>
-              </form>
-            ) : (
-              <div
-                className="group cursor-pointer rounded-lg p-1.5 hover:bg-sidebar/40 transition-colors"
-                onClick={() => {
-                  setAboutDraft(profileData.about);
-                  setIsEditingAbout(true);
-                }}
-              >
-                <p className="text-xs text-slate-200 leading-relaxed font-medium italic" data-testid="text-about-display">
-                  "{profileData.about}"
-                </p>
-              </div>
-            )}
-            <p className="text-[10px] leading-tight text-slate-500">
-              Your status is visible to everyone in your team and organization.
-            </p>
-          </div>
-
-          {/* Account Meta & Status */}
-          <div className="border-t border-sidebar-border pt-4">
-            <div className="flex items-center gap-2 text-xs text-slate-400">
-              <ShieldCheck size={15} className="text-emerald-400" /> {roleDisplay}
-            </div>
-            <p className="mt-3 text-xs text-slate-400">
-              Status <span className="mono ml-2 font-semibold text-sidebar-foreground">{details?.status || 'ACTIVE'}</span>
-            </p>
-          </div>
-        </div>
-
-        {/* Lightbox / Modal for Full Photo Preview */}
-        {showPhotoModal && (
-          <div
-            role="dialog"
-            aria-modal="true"
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
-            onClick={() => setShowPhotoModal(false)}
-          >
-            <div
-              className="relative max-w-sm w-full rounded-2xl bg-card border border-border p-6 shadow-2xl text-center"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between pb-3 border-b border-border">
-                <h3 className="font-bold text-foreground text-sm">Profile Photo</h3>
-                <button
-                  type="button"
-                  data-testid="button-close-photo-modal"
-                  onClick={() => setShowPhotoModal(false)}
-                  className="rounded-lg p-1 text-muted-foreground hover:bg-muted cursor-pointer"
-                >
-                  <X size={17} />
-                </button>
-              </div>
-
-              <div className="my-5 flex justify-center">
+        <div className="rounded-[2rem] bg-white dark:bg-card border border-slate-100/90 dark:border-border p-6 sm:p-10 shadow-xl shadow-slate-200/50 dark:shadow-none">
+          {/* Header Row: Avatar, Name, Email, Edit Button */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5 pb-8 border-b border-slate-100 dark:border-border/60">
+            <div className="flex items-center gap-4 sm:gap-5">
+              {/* Profile Avatar with Hover & Camera Action */}
+              <div className="relative group cursor-pointer shrink-0" onClick={() => setShowPhotoModal(true)}>
                 {profileData.photo ? (
                   <img
                     src={profileData.photo}
                     alt={effectiveName}
-                    className="h-48 w-48 rounded-full object-cover shadow-xl border-4 border-emerald-500/30"
+                    data-testid="img-profile-photo"
+                    className="h-20 w-20 sm:h-24 sm:w-24 rounded-full object-cover ring-4 ring-white dark:ring-card shadow-md transition-transform group-hover:scale-105"
+                    title="Click to view full photo"
                   />
                 ) : (
-                  <div className="grid h-48 w-48 place-items-center rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 text-5xl font-bold text-white shadow-xl">
+                  <div
+                    data-testid="avatar-profile-initials"
+                    className="grid h-20 w-20 sm:h-24 sm:w-24 place-items-center rounded-full bg-gradient-to-tr from-blue-600 to-indigo-500 text-2xl sm:text-3xl font-bold text-white ring-4 ring-white dark:ring-card shadow-md transition-transform group-hover:scale-105"
+                    title="Click to change photo"
+                  >
                     {initials(effectiveName)}
                   </div>
                 )}
-              </div>
-
-              <div className="mb-5">
-                <p className="text-base font-bold text-foreground">{effectiveName}</p>
-                <p className="mt-1 text-xs text-muted-foreground italic">"{profileData.about}"</p>
-              </div>
-
-              <div className="flex items-center justify-center gap-2 pt-3 border-t border-border">
-                <Button
+                <button
                   type="button"
-                  variant="secondary"
-                  testId="button-modal-change-photo"
-                  onClick={() => {
-                    setShowPhotoModal(false);
+                  data-testid="button-change-photo"
+                  title="Change profile photo"
+                  onClick={(e) => {
+                    e.stopPropagation();
                     fileInputRef.current?.click();
                   }}
+                  className="absolute bottom-0 right-0 grid h-8 w-8 place-items-center rounded-full bg-[#2563eb] text-white shadow-md hover:bg-blue-700 active:scale-95 transition-all border-2 border-white dark:border-card cursor-pointer"
                 >
-                  <Camera size={14} /> Change
-                </Button>
-                {profileData.photo && (
-                  <Button
-                    type="button"
-                    variant="danger"
-                    testId="button-modal-remove-photo"
-                    onClick={handleRemovePhoto}
-                  >
-                    <Trash2 size={14} /> Remove
-                  </Button>
+                  <Camera size={14} />
+                </button>
+              </div>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                data-testid="input-photo-file"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handlePhotoFile(file);
+                  e.target.value = '';
+                }}
+              />
+
+              <div className="min-w-0">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <h1 className="text-xl sm:text-2xl font-bold text-foreground tracking-tight truncate">{formFullName || effectiveName}</h1>
+                  <Badge tone={isHr ? 'info' : isManager ? 'warning' : 'success'}>
+                    {roleDisplay}
+                  </Badge>
+                </div>
+                <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 truncate">{userIdentifier}</p>
+                {formAbout && (
+                  <p className="text-xs text-slate-500 dark:text-slate-400 italic mt-1.5 flex items-center gap-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+                    <span className="truncate">"{formAbout}"</span>
+                  </p>
                 )}
-                <Button
+              </div>
+            </div>
+
+            {/* Blue Edit Button matching the screenshot */}
+            <div className="flex items-center gap-2.5 self-start sm:self-center">
+              {!isEditing ? (
+                <button
                   type="button"
-                  variant="ghost"
-                  testId="button-modal-close-photo"
-                  onClick={() => setShowPhotoModal(false)}
+                  data-testid="button-edit-profile"
+                  onClick={() => setIsEditing(true)}
+                  className="rounded-xl bg-[#2563eb] hover:bg-blue-700 text-white font-medium text-sm px-6 py-2.5 shadow-sm transition-all duration-150 cursor-pointer active:scale-95"
                 >
-                  Close
-                </Button>
+                  Edit
+                </button>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    data-testid="button-cancel-edit"
+                    onClick={handleCancelEdit}
+                    className="rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-muted dark:hover:bg-muted/80 text-foreground font-medium text-sm px-4 py-2.5 transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="button-save-profile"
+                    onClick={handleSaveAll}
+                    className="rounded-xl bg-[#2563eb] hover:bg-blue-700 text-white font-medium text-sm px-5 py-2.5 shadow-sm transition-all duration-150 flex items-center gap-1.5 cursor-pointer active:scale-95"
+                  >
+                    <Check size={15} /> Save Changes
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Form Fields: 2 Columns Grid exactly like screenshot */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-6 mt-8 sm:mt-10">
+            {/* 1. Full Name */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                Full Name
+              </label>
+              <input
+                type="text"
+                data-testid="input-profile-fullname"
+                placeholder="Your First Name"
+                value={formFullName}
+                disabled={!isEditing}
+                onChange={(e) => setFormFullName(e.target.value)}
+                className={cx(
+                  "h-12 w-full rounded-xl px-4 text-sm font-medium transition-all outline-none",
+                  isEditing
+                    ? "bg-[#f8fafc] dark:bg-muted/40 border border-slate-200/80 dark:border-border text-foreground focus:bg-white dark:focus:bg-card focus:border-blue-500 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/30"
+                    : "bg-[#f8fafc]/70 dark:bg-muted/20 border border-slate-100 dark:border-border/40 text-foreground cursor-default"
+                )}
+              />
+            </div>
+
+            {/* 2. Nick Name */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                Nick Name
+              </label>
+              <input
+                type="text"
+                data-testid="input-profile-nickname"
+                placeholder="Your First Name"
+                value={formNickName}
+                disabled={!isEditing}
+                onChange={(e) => setFormNickName(e.target.value)}
+                className={cx(
+                  "h-12 w-full rounded-xl px-4 text-sm font-medium transition-all outline-none",
+                  isEditing
+                    ? "bg-[#f8fafc] dark:bg-muted/40 border border-slate-200/80 dark:border-border text-foreground focus:bg-white dark:focus:bg-card focus:border-blue-500 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/30"
+                    : "bg-[#f8fafc]/70 dark:bg-muted/20 border border-slate-100 dark:border-border/40 text-foreground cursor-default"
+                )}
+              />
+            </div>
+
+            {/* 3. Gender */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                Gender
+              </label>
+              <div className="relative">
+                <select
+                  data-testid="select-profile-gender"
+                  value={formGender}
+                  disabled={!isEditing}
+                  onChange={(e) => setFormGender(e.target.value)}
+                  className={cx(
+                    "h-12 w-full appearance-none rounded-xl px-4 pr-10 text-sm font-medium transition-all outline-none",
+                    isEditing
+                      ? "bg-[#f8fafc] dark:bg-muted/40 border border-slate-200/80 dark:border-border text-foreground focus:bg-white dark:focus:bg-card focus:border-blue-500 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/30 cursor-pointer"
+                      : "bg-[#f8fafc]/70 dark:bg-muted/20 border border-slate-100 dark:border-border/40 text-foreground cursor-default"
+                  )}
+                >
+                  <option value="MALE">Male</option>
+                  <option value="FEMALE">Female</option>
+                  <option value="NON_BINARY">Non-binary</option>
+                  <option value="OTHER">Other</option>
+                  <option value="PREFER_NOT_TO_SAY">Prefer not to say</option>
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3.5 text-slate-400">
+                  <ChevronDown size={17} />
+                </div>
+              </div>
+            </div>
+
+            {/* 4. Country */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                Country
+              </label>
+              <div className="relative">
+                <select
+                  data-testid="select-profile-country"
+                  value={formCountry}
+                  disabled={!isEditing}
+                  onChange={(e) => setFormCountry(e.target.value)}
+                  className={cx(
+                    "h-12 w-full appearance-none rounded-xl px-4 pr-10 text-sm font-medium transition-all outline-none",
+                    isEditing
+                      ? "bg-[#f8fafc] dark:bg-muted/40 border border-slate-200/80 dark:border-border text-foreground focus:bg-white dark:focus:bg-card focus:border-blue-500 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/30 cursor-pointer"
+                      : "bg-[#f8fafc]/70 dark:bg-muted/20 border border-slate-100 dark:border-border/40 text-foreground cursor-default"
+                  )}
+                >
+                  <option value="United States">United States</option>
+                  <option value="United Kingdom">United Kingdom</option>
+                  <option value="Canada">Canada</option>
+                  <option value="Australia">Australia</option>
+                  <option value="India">India</option>
+                  <option value="Germany">Germany</option>
+                  <option value="France">France</option>
+                  <option value="Japan">Japan</option>
+                  <option value="Singapore">Singapore</option>
+                  <option value="Netherlands">Netherlands</option>
+                  <option value="Ireland">Ireland</option>
+                  <option value="Sweden">Sweden</option>
+                  <option value="New Zealand">New Zealand</option>
+                  <option value="Brazil">Brazil</option>
+                  <option value="Other">Other</option>
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3.5 text-slate-400">
+                  <ChevronDown size={17} />
+                </div>
+              </div>
+            </div>
+
+            {/* 5. Language */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                Language
+              </label>
+              <div className="relative">
+                <select
+                  data-testid="select-profile-language"
+                  value={formLanguage}
+                  disabled={!isEditing}
+                  onChange={(e) => setFormLanguage(e.target.value)}
+                  className={cx(
+                    "h-12 w-full appearance-none rounded-xl px-4 pr-10 text-sm font-medium transition-all outline-none",
+                    isEditing
+                      ? "bg-[#f8fafc] dark:bg-muted/40 border border-slate-200/80 dark:border-border text-foreground focus:bg-white dark:focus:bg-card focus:border-blue-500 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/30 cursor-pointer"
+                      : "bg-[#f8fafc]/70 dark:bg-muted/20 border border-slate-100 dark:border-border/40 text-foreground cursor-default"
+                  )}
+                >
+                  <option value="English (US)">English (US)</option>
+                  <option value="English (UK)">English (UK)</option>
+                  <option value="Spanish">Spanish</option>
+                  <option value="French">French</option>
+                  <option value="German">German</option>
+                  <option value="Mandarin">Mandarin</option>
+                  <option value="Hindi">Hindi</option>
+                  <option value="Japanese">Japanese</option>
+                  <option value="Portuguese">Portuguese</option>
+                  <option value="Arabic">Arabic</option>
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3.5 text-slate-400">
+                  <ChevronDown size={17} />
+                </div>
+              </div>
+            </div>
+
+            {/* 6. Time Zone */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                Time Zone
+              </label>
+              <div className="relative">
+                <select
+                  data-testid="select-profile-timezone"
+                  value={formTimeZone}
+                  disabled={!isEditing}
+                  onChange={(e) => setFormTimeZone(e.target.value)}
+                  className={cx(
+                    "h-12 w-full appearance-none rounded-xl px-4 pr-10 text-sm font-medium transition-all outline-none",
+                    isEditing
+                      ? "bg-[#f8fafc] dark:bg-muted/40 border border-slate-200/80 dark:border-border text-foreground focus:bg-white dark:focus:bg-card focus:border-blue-500 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/30 cursor-pointer"
+                      : "bg-[#f8fafc]/70 dark:bg-muted/20 border border-slate-100 dark:border-border/40 text-foreground cursor-default"
+                  )}
+                >
+                  <option value="(GMT-08:00) Pacific Time (US & Canada)">(GMT-08:00) Pacific Time</option>
+                  <option value="(GMT-07:00) Mountain Time (US & Canada)">(GMT-07:00) Mountain Time</option>
+                  <option value="(GMT-06:00) Central Time (US & Canada)">(GMT-06:00) Central Time</option>
+                  <option value="(GMT-05:00) Eastern Time (US & Canada)">(GMT-05:00) Eastern Time</option>
+                  <option value="(GMT+00:00) UTC / London">(GMT+00:00) UTC / London</option>
+                  <option value="(GMT+01:00) Central European Time">(GMT+01:00) Central European Time</option>
+                  <option value="(GMT+02:00) Eastern European Time">(GMT+02:00) Eastern European Time</option>
+                  <option value="(GMT+05:30) India Standard Time">(GMT+05:30) India Standard Time</option>
+                  <option value="(GMT+08:00) Singapore / Beijing">(GMT+08:00) Singapore / Beijing</option>
+                  <option value="(GMT+09:00) Tokyo / Seoul">(GMT+09:00) Tokyo / Seoul</option>
+                  <option value="(GMT+10:00) Australian Eastern Time">(GMT+10:00) Australian Eastern Time</option>
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3.5 text-slate-400">
+                  <ChevronDown size={17} />
+                </div>
               </div>
             </div>
           </div>
-        )}
 
-        <div className="rounded-2xl border border-card-border bg-card p-6 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="font-bold">Personal & contact details</h2>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Protected details maintained in accordance with institutional policy.
-              </p>
-            </div>
-            <Badge tone="info">Read-only</Badge>
-          </div>
+          {/* Section: My email Address (matching the uploaded screenshot) */}
+          <div className="mt-10 pt-8 border-t border-slate-100 dark:border-border/60">
+            <h2 className="text-base font-bold text-foreground">My email Address</h2>
 
-          <div className="mt-6 grid gap-x-5 gap-y-5 sm:grid-cols-2">
-            <div>
-              <p className="text-xs font-medium text-muted-foreground">Full name</p>
-              <p className="mt-1 text-sm font-semibold">{details?.fullName || '—'}</p>
+            {/* Primary Email Item */}
+            <div className="mt-4 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3.5">
+                <div className="h-11 w-11 rounded-full bg-blue-100/70 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                  <Mail size={18} />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-foreground">{userIdentifier}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">1 month ago</p>
+                </div>
+              </div>
+              <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/50 px-2.5 py-0.5 rounded-full">
+                Primary
+              </span>
             </div>
-            <div>
-              <p className="text-xs font-medium text-muted-foreground">Email address</p>
-              <p className="mt-1 text-sm font-semibold">{details?.email || '—'}</p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-muted-foreground">Gender</p>
-              <p className="mt-1 text-sm font-semibold">{formatGender(details?.gender)}</p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-muted-foreground">Date of birth</p>
-              <p className="mt-1 text-sm font-semibold">
-                {details?.dateOfBirth ? formatDate(details.dateOfBirth) : 'Not specified'}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-muted-foreground">Age</p>
-              <p className="mt-1 text-sm font-semibold">
-                {details?.age !== null && details?.age !== undefined ? `${details.age} years old` : '—'}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-muted-foreground">Mobile number</p>
-              <p className="mt-1 text-sm font-semibold">{details?.mobileNumber || 'Not specified'}</p>
-            </div>
-            <div className="sm:col-span-2">
-              <p className="text-xs font-medium text-muted-foreground">Residential address</p>
-              <p className="mt-1 text-sm font-semibold">{details?.residentialAddress || 'Not specified'}</p>
-            </div>
-          </div>
 
-          <div className="mt-6 rounded-xl border border-border bg-muted/40 p-4 text-xs text-muted-foreground">
-            <span className="font-semibold text-foreground">Need to update your details?</span> {isHr ? 'HR administrators can update employee records directly from the Employees directory.' : isManager ? 'Managers can request record updates by contacting HR Administration.' : 'Employees cannot directly edit protected personal records. Click "Request correction" above to notify HR Administration.'}
+            {/* Secondary Emails */}
+            {profileData.secondaryEmails?.map((item) => (
+              <div key={item.email} className="mt-3 flex items-center justify-between gap-3 pt-3 border-t border-slate-100/60 dark:border-border/40">
+                <div className="flex items-center gap-3.5">
+                  <div className="h-11 w-11 rounded-full bg-slate-100 dark:bg-muted text-slate-500 flex items-center justify-center shrink-0">
+                    <Mail size={18} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">{item.email}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Added {item.addedAt || 'recently'}</p>
+                  </div>
+                </div>
+                {isEditing && (
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveSecondaryEmail(item.email)}
+                    className="text-xs font-semibold text-rose-500 hover:text-rose-700 p-1.5 transition-colors cursor-pointer"
+                    title="Remove email"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+            ))}
+
+            {/* + Add Email Address Form / Button */}
+            {!addEmailOpen ? (
+              <button
+                type="button"
+                data-testid="button-add-email"
+                onClick={() => setAddEmailOpen(true)}
+                className="mt-4 inline-flex items-center gap-2 rounded-xl bg-blue-50/80 hover:bg-blue-100 dark:bg-blue-950/30 dark:hover:bg-blue-900/40 text-blue-600 dark:text-blue-400 font-semibold text-xs px-4 py-2.5 transition-colors cursor-pointer"
+              >
+                <Plus size={14} /> Add Email Address
+              </button>
+            ) : (
+              <form onSubmit={handleAddSecondaryEmail} className="mt-4 p-4 rounded-2xl border border-blue-200 bg-blue-50/40 dark:bg-muted/30 max-w-md space-y-3">
+                <label className="block text-xs font-semibold text-foreground">
+                  New email address
+                </label>
+                <input
+                  type="email"
+                  required
+                  placeholder="name@example.com"
+                  value={newEmailInput}
+                  onChange={(e) => setNewEmailInput(e.target.value)}
+                  className="h-10 w-full rounded-xl border border-slate-200 bg-white dark:bg-card px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                />
+                <div className="flex items-center gap-2">
+                  <button
+                    type="submit"
+                    className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 cursor-pointer"
+                  >
+                    Add email
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setAddEmailOpen(false); setNewEmailInput(''); }}
+                    className="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-500 hover:text-foreground cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
-      </div>
 
-      {(!isHr && !isManager || corrections.length > 0) && (
-        <div className="mt-8 rounded-2xl border border-card-border bg-card p-6 shadow-sm">
-          <div className="mb-4 flex items-center justify-between">
+        {/* Secondary Card: Contact & Status / Bio */}
+        <div className="mt-6 rounded-[2rem] bg-white dark:bg-card border border-slate-100/90 dark:border-border p-6 sm:p-8 shadow-sm">
+          <div className="flex items-center justify-between gap-3 mb-6">
             <div>
-              <h2 className="font-bold">Correction requests history</h2>
-              <p className="mt-1 text-xs text-muted-foreground">Requests submitted to HR for profile updates.</p>
+              <h2 className="text-base font-bold text-foreground">Contact & Professional Status</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">Customize your communication details and status bio shown across the workplace.</p>
             </div>
+            {!isEditing && (
+              <button
+                type="button"
+                onClick={() => setIsEditing(true)}
+                className="text-xs font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 cursor-pointer"
+              >
+                Edit Details
+              </button>
+            )}
           </div>
 
-          {corrections.length === 0 ? (
-            <EmptyState
-              title="No correction requests"
-              detail="When you submit requests to update your personal details, they will appear here."
-            />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[600px] text-left text-sm">
-                <thead>
-                  <tr className="border-b border-border bg-muted/30 text-xs text-muted-foreground">
-                    <th className="px-4 py-3 font-medium">Submitted</th>
-                    <th className="py-3 font-medium">Requested changes</th>
-                    <th className="py-3 font-medium">Status</th>
-                    <th className="px-4 py-3 font-medium">HR resolution</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {corrections.map((req) => (
-                    <tr key={req.id}>
-                      <td className="px-4 py-3 text-xs text-muted-foreground">
-                        {req.submittedAt ? new Date(req.submittedAt).toLocaleDateString() : '—'}
-                      </td>
-                      <td className="py-3 text-sm font-medium max-w-xs">{req.requestedChanges}</td>
-                      <td className="py-3">
-                        <Badge tone={statusTone(req.status === 'RESOLVED' ? 'Approved' : req.status === 'PENDING' ? 'Pending' : 'Rejected')}>
-                          {req.status}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground">
-                        {req.resolutionNote ? (
-                          <div>
-                            <p className="font-medium text-foreground">{req.resolutionNote}</p>
-                            {req.resolverName && <p className="text-[11px]">By {req.resolverName}</p>}
-                          </div>
-                        ) : (
-                          '—'
-                        )}
-                      </td>
-                    </tr>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-6">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                Mobile Number
+              </label>
+              <input
+                type="text"
+                data-testid="input-profile-mobile"
+                placeholder="+1 (555) 019-3456"
+                value={formMobile}
+                disabled={!isEditing}
+                onChange={(e) => setFormMobile(e.target.value)}
+                className={cx(
+                  "h-12 w-full rounded-xl px-4 text-sm font-medium transition-all outline-none",
+                  isEditing
+                    ? "bg-[#f8fafc] dark:bg-muted/40 border border-slate-200/80 dark:border-border text-foreground focus:bg-white dark:focus:bg-card focus:border-blue-500 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/30"
+                    : "bg-[#f8fafc]/70 dark:bg-muted/20 border border-slate-100 dark:border-border/40 text-foreground cursor-default"
+                )}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                Residential Address
+              </label>
+              <input
+                type="text"
+                data-testid="input-profile-address"
+                placeholder="Street address, City, State, ZIP"
+                value={formAddress}
+                disabled={!isEditing}
+                onChange={(e) => setFormAddress(e.target.value)}
+                className={cx(
+                  "h-12 w-full rounded-xl px-4 text-sm font-medium transition-all outline-none",
+                  isEditing
+                    ? "bg-[#f8fafc] dark:bg-muted/40 border border-slate-200/80 dark:border-border text-foreground focus:bg-white dark:focus:bg-card focus:border-blue-500 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/30"
+                    : "bg-[#f8fafc]/70 dark:bg-muted/20 border border-slate-100 dark:border-border/40 text-foreground cursor-default"
+                )}
+              />
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                Professional Status & Bio
+              </label>
+              <input
+                type="text"
+                data-testid="input-profile-about"
+                placeholder="Available"
+                value={formAbout}
+                disabled={!isEditing}
+                onChange={(e) => setFormAbout(e.target.value)}
+                className={cx(
+                  "h-12 w-full rounded-xl px-4 text-sm font-medium transition-all outline-none",
+                  isEditing
+                    ? "bg-[#f8fafc] dark:bg-muted/40 border border-slate-200/80 dark:border-border text-foreground focus:bg-white dark:focus:bg-card focus:border-blue-500 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/30"
+                    : "bg-[#f8fafc]/70 dark:bg-muted/20 border border-slate-100 dark:border-border/40 text-foreground cursor-default"
+                )}
+              />
+              {isEditing && (
+                <div className="mt-2.5 flex flex-wrap gap-1.5 items-center">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground mr-1">Quick presets:</span>
+                  {PROFESSIONAL_STATUS_PRESETS.slice(0, 5).map((preset) => (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() => setFormAbout(`${preset.emoji} ${preset.label}`)}
+                      className="rounded-full border border-slate-200 bg-slate-50 hover:bg-slate-100 dark:border-border dark:bg-muted px-2.5 py-1 text-xs text-foreground transition-colors cursor-pointer"
+                    >
+                      {preset.emoji} {preset.label}
+                    </button>
                   ))}
-                </tbody>
-              </table>
+                </div>
+              )}
+            </div>
+          </div>
+          {isEditing && (
+            <div className="mt-6 flex justify-end gap-2 border-t border-slate-100 dark:border-border pt-4">
+              <button
+                type="button"
+                onClick={handleCancelEdit}
+                className="rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-muted dark:hover:bg-muted/80 text-foreground font-medium text-xs px-4 py-2 transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveAll}
+                className="rounded-xl bg-[#2563eb] hover:bg-blue-700 text-white font-medium text-xs px-4 py-2 shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <Check size={14} /> Save Details
+              </button>
             </div>
           )}
+        </div>
+
+        {/* Institutional Record & HR Correction Requests History */}
+        {!isHr && !isManager && (
+          <div className="mt-8 rounded-[2rem] bg-white dark:bg-card border border-slate-100 dark:border-border p-6 sm:p-8 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <h3 className="font-bold text-foreground text-sm sm:text-base">Official Personnel Record</h3>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Institutional HR records are protected. Need to submit formal changes for payroll or official files?
+                </p>
+              </div>
+              <Button
+                testId="button-open-correction-modal"
+                variant="secondary"
+                className="shrink-0 text-xs"
+                onClick={() => { setCorrectionModalOpen(true); setError(''); setSuccessMessage(''); }}
+              >
+                <FileText size={14} /> Request HR Correction
+              </Button>
+            </div>
+
+            {/* Correction Requests Table if any exist */}
+            {corrections.length > 0 && (
+              <div className="mt-6 pt-6 border-t border-slate-100 dark:border-border">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">Submitted Correction Requests</h4>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[580px] text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-border text-muted-foreground">
+                        <th className="pb-2.5 font-medium">Submitted</th>
+                        <th className="pb-2.5 font-medium">Requested changes</th>
+                        <th className="pb-2.5 font-medium">Status</th>
+                        <th className="pb-2.5 font-medium">HR resolution</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {corrections.map((req) => (
+                        <tr key={req.id}>
+                          <td className="py-2.5 text-muted-foreground">{req.submittedAt ? new Date(req.submittedAt).toLocaleDateString() : '—'}</td>
+                          <td className="py-2.5 font-medium text-foreground max-w-xs">{req.requestedChanges}</td>
+                          <td className="py-2.5"><Badge tone={statusTone(req.status === 'RESOLVED' ? 'Approved' : req.status === 'PENDING' ? 'Pending' : 'Rejected')}>{req.status}</Badge></td>
+                          <td className="py-2.5 text-muted-foreground">{req.resolutionNote || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Lightbox / Modal for Full Photo Preview */}
+      {showPhotoModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+          onClick={() => setShowPhotoModal(false)}
+        >
+          <div
+            className="relative max-w-sm w-full rounded-3xl bg-white dark:bg-card border border-border p-6 shadow-2xl text-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-border">
+              <h3 className="font-bold text-foreground text-sm">Profile Photo</h3>
+              <button
+                type="button"
+                data-testid="button-close-photo-modal"
+                onClick={() => setShowPhotoModal(false)}
+                className="rounded-lg p-1 text-muted-foreground hover:bg-muted cursor-pointer"
+              >
+                <X size={17} />
+              </button>
+            </div>
+
+            <div className="my-5 flex justify-center">
+              {profileData.photo ? (
+                <img
+                  src={profileData.photo}
+                  alt={effectiveName}
+                  className="h-48 w-48 rounded-full object-cover shadow-xl border-4 border-blue-500/30"
+                />
+              ) : (
+                <div className="grid h-48 w-48 place-items-center rounded-full bg-gradient-to-tr from-blue-600 to-indigo-500 text-5xl font-bold text-white shadow-xl">
+                  {initials(effectiveName)}
+                </div>
+              )}
+            </div>
+
+            <div className="mb-5">
+              <p className="text-base font-bold text-foreground">{effectiveName}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">{userIdentifier}</p>
+            </div>
+
+            <div className="flex items-center justify-center gap-2 pt-3 border-t border-border">
+              <Button
+                type="button"
+                variant="secondary"
+                testId="button-modal-change-photo"
+                onClick={() => {
+                  setShowPhotoModal(false);
+                  fileInputRef.current?.click();
+                }}
+              >
+                <Camera size={14} /> Change
+              </Button>
+              {profileData.photo && (
+                <Button
+                  type="button"
+                  variant="danger"
+                  testId="button-modal-remove-photo"
+                  onClick={handleRemovePhoto}
+                >
+                  <Trash2 size={14} /> Remove
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant="ghost"
+                testId="button-modal-close-photo"
+                onClick={() => setShowPhotoModal(false)}
+              >
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal for Submitting HR Correction Requests */}
+      {correctionModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          onClick={() => setCorrectionModalOpen(false)}
+        >
+          <div
+            className="relative max-w-lg w-full rounded-3xl bg-white dark:bg-card border border-border p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-border">
+              <div>
+                <h3 className="font-bold text-foreground text-sm sm:text-base">Request Official HR Record Update</h3>
+                <p className="mt-0.5 text-xs text-muted-foreground">Describe the personal details changes you need HR Administration to update.</p>
+              </div>
+              <button
+                type="button"
+                data-testid="button-close-correction-modal"
+                onClick={() => setCorrectionModalOpen(false)}
+                className="rounded-lg p-1 text-muted-foreground hover:bg-muted cursor-pointer"
+              >
+                <X size={17} />
+              </button>
+            </div>
+
+            <form onSubmit={handleCorrectionSubmit} className="mt-4 space-y-4">
+              <label className="block text-xs font-semibold text-foreground">
+                Requested changes & reason
+                <textarea
+                  data-testid="input-correction-changes"
+                  required
+                  rows={4}
+                  value={requestedChanges}
+                  onChange={(e) => setRequestedChanges(e.target.value)}
+                  placeholder="e.g., Please update my official surname to Rawles and mobile number to +1-555-0199 for payroll and tax documentation."
+                  className="mt-2 w-full resize-none rounded-xl border border-input bg-card p-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                />
+              </label>
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+                <Button
+                  variant="ghost"
+                  testId="button-cancel-correction"
+                  onClick={() => setCorrectionModalOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  testId="button-submit-correction"
+                  disabled={submittingCorrection || !requestedChanges.trim()}
+                >
+                  {submittingCorrection ? 'Submitting…' : 'Submit to HR'}
+                </Button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>
@@ -2023,29 +2846,226 @@ function HREmployees({ employees, setEmployees }: { employees: Employee[]; setEm
 }
 
 function HRLeaveRequests({ leaves, setLeaves }: { leaves: LeaveRequest[]; setLeaves: (value: LeaveRequest[] | ((prev: LeaveRequest[]) => LeaveRequest[])) => void }) {
-  const update = (id: string, status: LeaveStatus) => setLeaves((prev) => prev.map((leave) => leave.id === id ? { ...leave, status, approvedBy: 'Avery Morgan' } : leave)); const pending = leaves.filter((l) => l.status === 'Pending');
-  return <div className="page-enter">
-    <SectionTitle eyebrow="People operations" title="Leave requests" detail="Review, decide, and keep the team moving." action={<Badge tone={pending.length ? 'warning' : 'success'}>{pending.length} pending review</Badge>} />
-    <div className="space-y-3">
-      {leaves.map((leave) => (
-        <div key={leave.id} data-testid={`card-request-${leave.id}`} className="rounded-2xl border border-card-border bg-card p-5 shadow-sm">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center">
-            <div className="flex min-w-0 flex-1 items-center gap-3">
-              <UserAvatar name={leave.employeeName} className="h-11 w-11 rounded-xl shadow-xs" textClassName="text-sm" />
-              <div className="min-w-0"><p className="font-semibold">{leave.employeeName}</p><p className="mt-1 text-xs text-muted-foreground">{leave.leaveType} · Applied {formatDate(leave.appliedDate)}</p></div>
+  const [filter, setFilter] = useState<'All' | 'Pending' | 'Sick leave' | 'Approved' | 'Rejected'>('All');
+  const [viewingDoc, setViewingDoc] = useState<LeaveAttachment | null>(null);
+
+  const update = (id: string, status: LeaveStatus, hrResolutionNote?: string) =>
+    setLeaves((prev) =>
+      prev.map((leave) =>
+        leave.id === id
+          ? {
+              ...leave,
+              status,
+              approvedBy: 'Avery Morgan (HR Admin)',
+              hrResolutionNote: hrResolutionNote || leave.hrResolutionNote,
+            }
+          : leave
+      )
+    );
+
+  const pending = leaves.filter((l) => l.status === 'Pending');
+
+  const filteredLeaves = leaves.filter((leave) => {
+    if (filter === 'Pending') return leave.status === 'Pending';
+    if (filter === 'Approved') return leave.status === 'Approved';
+    if (filter === 'Rejected') return leave.status === 'Rejected';
+    if (filter === 'Sick leave') return leave.leaveType === 'Sick leave';
+    return true;
+  });
+
+  return (
+    <div className="page-enter">
+      <SectionTitle
+        eyebrow="People operations"
+        title="Leave requests"
+        detail="Review employee leave applications, verify medical & proof documents, and issue formal decisions."
+        action={
+          <Badge tone={pending.length ? 'warning' : 'success'}>
+            {pending.length} pending HR review
+          </Badge>
+        }
+      />
+
+      {/* Filter Tabs */}
+      <div className="mb-5 flex flex-wrap items-center gap-2">
+        {(['All', 'Pending', 'Sick leave', 'Approved', 'Rejected'] as const).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => setFilter(tab)}
+            className={cx(
+              "rounded-xl px-3.5 py-1.5 text-xs font-semibold transition-all cursor-pointer",
+              filter === tab
+                ? "bg-primary text-primary-foreground shadow-xs"
+                : "bg-card border border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+            )}
+          >
+            {tab}
+            {tab === 'Pending' && pending.length > 0 && ` (${pending.length})`}
+          </button>
+        ))}
+      </div>
+
+      <div className="space-y-4">
+        {filteredLeaves.length === 0 ? (
+          <EmptyState
+            title="No leave requests found"
+            detail="There are no leave requests matching the selected filter."
+          />
+        ) : (
+          filteredLeaves.map((leave) => (
+            <div
+              key={leave.id}
+              data-testid={`card-request-${leave.id}`}
+              className="rounded-2xl border border-card-border bg-card p-5 shadow-sm transition-all"
+            >
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                  {/* Employee & Type */}
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
+                    <UserAvatar name={leave.employeeName} className="h-11 w-11 rounded-xl shadow-xs" textClassName="text-sm" />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="font-semibold text-foreground">{leave.employeeName}</p>
+                        <Badge tone={leave.leaveType === 'Sick leave' ? 'info' : 'neutral'}>
+                          {leave.leaveType}
+                        </Badge>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Applied {formatDate(leave.appliedDate)} · Request ID: {leave.id}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Dates & Reason */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm md:w-1/2">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Leave Dates</p>
+                      <p className="mt-1 font-medium text-foreground">
+                        {formatDate(leave.fromDate)}{leave.fromDate !== leave.toDate && ` — ${formatDate(leave.toDate)}`}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Reason for Absence</p>
+                      <p className="mt-1 text-foreground font-medium">{leave.reason}</p>
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex items-center gap-2 md:ml-4 shrink-0">
+                    {leave.status === 'Pending' ? (
+                      <>
+                        <Button
+                          testId={`button-approve-${leave.id}`}
+                          onClick={() => update(leave.id, 'Approved')}
+                          className="px-3"
+                        >
+                          <Check size={15} /> Approve
+                        </Button>
+                        <Button
+                          testId={`button-reject-${leave.id}`}
+                          variant="danger"
+                          onClick={() => update(leave.id, 'Rejected')}
+                          className="px-3"
+                        >
+                          <X size={15} /> Reject
+                        </Button>
+                      </>
+                    ) : (
+                      <Badge tone={statusTone(leave.status)}>
+                        {leave.status} {leave.approvedBy !== '—' && `· ${leave.approvedBy}`}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+
+                {/* Proof Documents & Verification Inspection Area */}
+                <div className="rounded-xl border border-border/70 bg-muted/20 p-4 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                        <Paperclip size={14} className="text-primary" />
+                        Proof Documents
+                      </span>
+                      {leave.attachments && leave.attachments.length > 0 ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 px-2.5 py-0.5 rounded-full">
+                          <CheckCircle2 size={12} /> {leave.attachments.length} document(s) attached
+                        </span>
+                      ) : leave.leaveType === 'Sick leave' ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 px-2.5 py-0.5 rounded-full">
+                          <AlertCircle size={12} /> No medical certificate uploaded
+                        </span>
+                      ) : (
+                        <span className="text-[11px] text-muted-foreground">None attached</span>
+                      )}
+                    </div>
+
+                    {/* Manager Recommendation Badge */}
+                    {leave.managerRecommendation && (
+                      <div className="flex items-center gap-1.5 text-xs">
+                        <span className="text-[11px] text-muted-foreground font-medium">Manager review:</span>
+                        <span
+                          className={cx(
+                            "rounded-full px-2.5 py-0.5 text-[11px] font-bold border",
+                            leave.managerRecommendation === 'Recommended'
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800"
+                              : leave.managerRecommendation === 'Flagged'
+                              ? "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-400 dark:border-rose-800"
+                              : "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800"
+                          )}
+                        >
+                          {leave.managerRecommendation === 'Recommended' ? '✓ Recommended by Manager' : leave.managerRecommendation === 'Flagged' ? '⚠ Flagged Questionable by Manager' : 'Pending Manager Review'}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Document Cards */}
+                  {leave.attachments && leave.attachments.length > 0 && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1">
+                      {leave.attachments.map((doc) => (
+                        <div
+                          key={doc.id}
+                          className="flex items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs shadow-2xs"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <FileText size={16} className="text-blue-600 dark:text-blue-400 shrink-0" />
+                            <div className="min-w-0">
+                              <p className="font-semibold text-foreground truncate" title={doc.name}>{doc.name}</p>
+                              <p className="text-[10px] text-muted-foreground">{formatFileSize(doc.size)}</p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            data-testid={`button-hr-inspect-${doc.id}`}
+                            onClick={() => setViewingDoc(doc)}
+                            className="inline-flex items-center gap-1 rounded-md bg-primary/10 hover:bg-primary/20 text-primary px-2 py-1 text-xs font-semibold transition-colors shrink-0 cursor-pointer"
+                          >
+                            <Eye size={12} /> Inspect
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Manager Review Notes if present */}
+                  {leave.managerNote && (
+                    <p className="text-xs text-muted-foreground italic bg-card border border-border/60 rounded-lg p-2.5">
+                      <span className="font-semibold not-italic text-foreground">Manager Note:</span> "{leave.managerNote}"
+                      {leave.managerReviewedBy && ` — ${leave.managerReviewedBy}`}
+                    </p>
+                  )}
+                </div>
+              </div>
             </div>
-            <div className="grid grid-cols-2 gap-7 text-sm">
-              <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Dates</p><p className="mt-1 font-medium">{formatDate(leave.fromDate)}{leave.fromDate !== leave.toDate && ` — ${formatDate(leave.toDate)}`}</p></div>
-              <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Reason</p><p className="mt-1 max-w-[180px] truncate font-medium">{leave.reason}</p></div>
-            </div>
-            <div className="flex items-center gap-2 md:ml-4">
-              {leave.status === 'Pending' ? <><Button testId={`button-approve-${leave.id}`} onClick={() => update(leave.id, 'Approved')} className="px-3"><Check size={15} /> Approve</Button><Button testId={`button-reject-${leave.id}`} variant="danger" onClick={() => update(leave.id, 'Rejected')} className="px-3"><X size={15} /> Reject</Button></> : <Badge tone={statusTone(leave.status)}>{leave.status} {leave.approvedBy !== '—' && `· ${leave.approvedBy}`}</Badge>}
-            </div>
-          </div>
-        </div>
-      ))}
+          ))
+        )}
+      </div>
+
+      {/* Document Viewer Modal */}
+      <DocumentViewerModal doc={viewingDoc} onClose={() => setViewingDoc(null)} />
     </div>
-  </div>;
+  );
 }
 
 function HRAttendance({ attendance, employees }: { attendance: Attendance[]; employees: Employee[] }) {
@@ -2066,7 +3086,13 @@ function SettingsPage({ role }: { role: Role }) {
   return <div className="page-enter"><SectionTitle eyebrow="Account" title="Settings" detail="Your access level is managed by the server-side account." /><div className="max-w-3xl space-y-5"><div className="rounded-2xl border border-card-border bg-card p-6 shadow-sm"><div className="flex items-start gap-4"><div className="rounded-lg bg-primary/10 p-2 text-primary"><UserCog size={18} /></div><div><h2 className="font-bold">Current access</h2><p className="mt-1 text-sm text-muted-foreground">{role === 'hr' ? 'HR administrator' : role === 'manager' ? 'Manager access' : 'Employee access'} is enforced by the authenticated backend session.</p><p className="mt-3 text-xs font-semibold text-emerald-700">Role changes require an authorized server-side workflow.</p></div></div></div><div className="rounded-2xl border border-card-border bg-card p-6 shadow-sm"><div className="flex items-center justify-between gap-4"><div><h2 className="font-bold">Appearance</h2><p className="mt-1 text-sm text-muted-foreground">Choose the visual theme for this browser.</p></div><select data-testid="select-theme" value={theme} onChange={(e) => setTheme(e.target.value)} className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary"><option value="light">Light</option><option value="dark">Dark</option></select></div></div><div className="rounded-2xl border border-rose-200 bg-rose-50/60 p-6"><h2 className="font-bold text-rose-900">Reset local demo</h2><p className="mt-1 text-sm leading-6 text-rose-800/70">Restore seeded employees, attendance, leave records, and light theme. This cannot be undone.</p><Button testId="button-reset-demo" variant="danger" className="mt-4" onClick={reset}>Reset demo data</Button></div></div></div>;
 }
 
-function ManagerDashboard() {
+function ManagerDashboard({
+  leaves = seedLeaves,
+  setLeaves,
+}: {
+  leaves?: LeaveRequest[];
+  setLeaves?: (value: LeaveRequest[] | ((prev: LeaveRequest[]) => LeaveRequest[])) => void;
+}) {
   const [employees, setEmployees] = useState<Array<{ id: number; name: string; email: string; employeeId?: string; status: string }>>([]);
   const [pendingRegistrations, setPendingRegistrations] = useState<Array<{ id: number; name: string; email: string; role: string; status: string; createdAt: string; emailVerifiedAt: string }>>([]);
   const [message, setMessage] = useState('');
@@ -2074,6 +3100,8 @@ function ManagerDashboard() {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [rejectingId, setRejectingId] = useState<number | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [viewingDoc, setViewingDoc] = useState<LeaveAttachment | null>(null);
+  const [managerNotes, setManagerNotes] = useState<Record<string, string>>({});
 
   const refresh = () => {
     authRequest<typeof employees>('/api/manager/employees')
@@ -2126,12 +3154,32 @@ function ManagerDashboard() {
     }
   };
 
+  const handleRecommendLeave = (id: string, recommendation: 'Recommended' | 'Flagged') => {
+    if (!setLeaves) return;
+    const note = managerNotes[id] || (recommendation === 'Recommended' ? 'Medical proof & leave schedule verified.' : 'Proof document missing or unclear.');
+    setLeaves((prev) =>
+      prev.map((l) =>
+        l.id === id
+          ? {
+              ...l,
+              managerRecommendation: recommendation,
+              managerNote: note,
+              managerReviewedBy: 'Jordan Reed (Manager)',
+              managerReviewedAt: new Date().toISOString(),
+            }
+          : l
+      )
+    );
+    setMessage(`Leave request ${id} marked as "${recommendation}" for HR review.`);
+    window.setTimeout(() => setMessage(''), 4000);
+  };
+
   return (
     <div className="page-enter">
       <SectionTitle
         eyebrow="Manager workspace"
         title="Manager operations"
-        detail="Review employee registrations assigned to you and manage your active team."
+        detail="Review employee registrations assigned to you, inspect leave proof documents, and manage your active team."
       />
 
       {message && (
@@ -2262,6 +3310,116 @@ function ManagerDashboard() {
         )}
       </div>
 
+      {/* Team Leave Applications & Proof Documents */}
+      <div className="mb-8 rounded-2xl border border-card-border bg-card p-5 shadow-sm">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h2 className="font-bold text-foreground">Team leave applications & proof verification</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Examine medical certificates, inspect attached proof documents, and record manager recommendation for HR.
+            </p>
+          </div>
+          <Link
+            href="/manager/leave-review"
+            className="text-xs font-semibold text-primary hover:underline flex items-center gap-1"
+          >
+            Dedicated review page <ArrowRight size={13} />
+          </Link>
+        </div>
+
+        <div className="space-y-3.5">
+          {leaves.map((leave) => (
+            <div
+              key={leave.id}
+              data-testid={`card-manager-leave-${leave.id}`}
+              className="rounded-xl border border-border bg-background p-4 shadow-2xs"
+            >
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <UserAvatar name={leave.employeeName} className="h-10 w-10 rounded-xl" textClassName="text-xs" />
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-foreground text-sm">{leave.employeeName}</p>
+                        <Badge tone={leave.leaveType === 'Sick leave' ? 'info' : 'neutral'}>
+                          {leave.leaveType}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {formatDate(leave.fromDate)}{leave.fromDate !== leave.toDate && ` — ${formatDate(leave.toDate)}`} · Applied {formatDate(leave.appliedDate)}
+                      </p>
+                    </div>
+                  </div>
+                  <Badge tone={statusTone(leave.status)}>{leave.status}</Badge>
+                </div>
+
+                <p className="text-xs text-muted-foreground bg-muted/30 p-2.5 rounded-lg">
+                  <span className="font-semibold text-foreground">Reason: </span>{leave.reason}
+                </p>
+
+                {/* Attached Proof Documents */}
+                <div className="flex items-center justify-between gap-2 flex-wrap border-t border-border/50 pt-2.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-semibold text-foreground flex items-center gap-1">
+                      <Paperclip size={13} className="text-primary" /> Proof Documents:
+                    </span>
+                    {leave.attachments && leave.attachments.length > 0 ? (
+                      leave.attachments.map((doc) => (
+                        <button
+                          key={doc.id}
+                          type="button"
+                          data-testid={`button-manager-inspect-${doc.id}`}
+                          onClick={() => setViewingDoc(doc)}
+                          className="inline-flex items-center gap-1 rounded-md bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 dark:hover:bg-blue-900/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 px-2.5 py-1 text-xs font-semibold transition-colors cursor-pointer"
+                        >
+                          <Eye size={12} /> {doc.name} ({formatFileSize(doc.size)})
+                        </button>
+                      ))
+                    ) : leave.leaveType === 'Sick leave' ? (
+                      <span className="text-[11px] text-rose-600 font-medium">No medical certificate attached</span>
+                    ) : (
+                      <span className="text-[11px] text-muted-foreground">None</span>
+                    )}
+                  </div>
+
+                  {/* Recommendation action */}
+                  {leave.status === 'Pending' && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        data-testid={`button-manager-recommend-${leave.id}`}
+                        onClick={() => handleRecommendLeave(leave.id, 'Recommended')}
+                        className={cx(
+                          "rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors cursor-pointer shadow-2xs",
+                          leave.managerRecommendation === 'Recommended'
+                            ? "bg-emerald-600 text-white"
+                            : "bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800"
+                        )}
+                      >
+                        ✓ Recommend HR Approval
+                      </button>
+                      <button
+                        type="button"
+                        data-testid={`button-manager-flag-${leave.id}`}
+                        onClick={() => handleRecommendLeave(leave.id, 'Flagged')}
+                        className={cx(
+                          "rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors cursor-pointer shadow-2xs",
+                          leave.managerRecommendation === 'Flagged'
+                            ? "bg-rose-600 text-white"
+                            : "bg-rose-50 text-rose-800 border border-rose-300 hover:bg-rose-100 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800"
+                        )}
+                      >
+                        ⚠ Flag Questionable
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Assigned Employees */}
       <div className="rounded-2xl border border-card-border bg-card p-5 shadow-sm">
         <div className="mb-4">
@@ -2293,6 +3451,207 @@ function ManagerDashboard() {
           </div>
         )}
       </div>
+
+      <DocumentViewerModal doc={viewingDoc} onClose={() => setViewingDoc(null)} />
+    </div>
+  );
+}
+
+function ManagerLeaveReview({
+  leaves,
+  setLeaves,
+}: {
+  leaves: LeaveRequest[];
+  setLeaves: (value: LeaveRequest[] | ((prev: LeaveRequest[]) => LeaveRequest[])) => void;
+}) {
+  const [viewingDoc, setViewingDoc] = useState<LeaveAttachment | null>(null);
+  const [managerNotes, setManagerNotes] = useState<Record<string, string>>({});
+  const [notice, setNotice] = useState('');
+
+  const handleRecommend = (id: string, recommendation: 'Recommended' | 'Flagged') => {
+    const note = managerNotes[id] || (recommendation === 'Recommended' ? 'Medical proof & schedule verified by manager.' : 'Proof document missing or unclear.');
+    setLeaves((prev) =>
+      prev.map((l) =>
+        l.id === id
+          ? {
+              ...l,
+              managerRecommendation: recommendation,
+              managerNote: note,
+              managerReviewedBy: 'Jordan Reed (Manager)',
+              managerReviewedAt: new Date().toISOString(),
+            }
+          : l
+      )
+    );
+    setNotice(`Leave request ${id} updated: marked as "${recommendation}".`);
+    window.setTimeout(() => setNotice(''), 4000);
+  };
+
+  const pendingCount = leaves.filter((l) => l.status === 'Pending').length;
+
+  return (
+    <div className="page-enter">
+      <SectionTitle
+        eyebrow="Manager workspace"
+        title="Team leave applications"
+        detail="Review employee leave requests, inspect attached medical certificates and proof files, and record your assessment for HR review."
+        action={<Badge tone={pendingCount ? 'warning' : 'success'}>{pendingCount} pending review</Badge>}
+      />
+
+      {notice && (
+        <p role="alert" className="mb-4 rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-sm font-semibold text-emerald-700 flex items-center gap-2">
+          <CheckCircle2 size={16} /> {notice}
+        </p>
+      )}
+
+      <div className="space-y-4">
+        {leaves.map((leave) => (
+          <div
+            key={leave.id}
+            data-testid={`card-manager-leave-${leave.id}`}
+            className="rounded-2xl border border-card-border bg-card p-5 shadow-sm"
+          >
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex items-center gap-3">
+                  <UserAvatar name={leave.employeeName} className="h-11 w-11 rounded-xl shadow-xs" textClassName="text-sm" />
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold text-foreground">{leave.employeeName}</p>
+                      <Badge tone={leave.leaveType === 'Sick leave' ? 'info' : 'neutral'}>
+                        {leave.leaveType}
+                      </Badge>
+                    </div>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Applied {formatDate(leave.appliedDate)} · Request ID: {leave.id}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="text-right">
+                    <p className="text-xs font-semibold text-foreground">
+                      {formatDate(leave.fromDate)}{leave.fromDate !== leave.toDate && ` — ${formatDate(leave.toDate)}`}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">Scheduled duration</p>
+                  </div>
+                  <Badge tone={statusTone(leave.status)}>{leave.status}</Badge>
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-muted/30 p-3 text-xs text-foreground">
+                <span className="font-semibold text-muted-foreground">Reason for leave: </span>
+                {leave.reason}
+              </div>
+
+              {/* Attached Proof Documents Section */}
+              <div className="rounded-xl border border-border/80 bg-muted/20 p-4 space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <Paperclip size={14} className="text-primary" />
+                    Employee Proof Documents
+                  </span>
+                  {leave.attachments && leave.attachments.length > 0 ? (
+                    <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <CheckCircle2 size={12} /> {leave.attachments.length} proof document(s) uploaded
+                    </span>
+                  ) : leave.leaveType === 'Sick leave' ? (
+                    <span className="text-[11px] font-semibold text-rose-700 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <AlertCircle size={12} /> No medical certificate attached
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-muted-foreground">No documents attached</span>
+                  )}
+                </div>
+
+                {leave.attachments && leave.attachments.length > 0 && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1">
+                    {leave.attachments.map((doc) => (
+                      <div
+                        key={doc.id}
+                        className="flex items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs shadow-2xs"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <FileText size={16} className="text-blue-600 dark:text-blue-400 shrink-0" />
+                          <div className="min-w-0">
+                            <p className="font-semibold text-foreground truncate" title={doc.name}>{doc.name}</p>
+                            <p className="text-[10px] text-muted-foreground">{formatFileSize(doc.size)}</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          data-testid={`button-manager-inspect-${doc.id}`}
+                          onClick={() => setViewingDoc(doc)}
+                          className="inline-flex items-center gap-1 rounded-md bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 px-2 py-1 text-xs font-semibold transition-colors shrink-0 cursor-pointer"
+                        >
+                          <Eye size={12} /> View proof
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Manager Verification & Endorsement Action */}
+              <div className="pt-2 border-t border-border/60">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="flex-1 max-w-md">
+                    <label className="block text-[11px] font-semibold text-muted-foreground mb-1">
+                      Manager verification note (sent to HR):
+                    </label>
+                    <input
+                      data-testid={`input-manager-leave-note-${leave.id}`}
+                      placeholder={leave.managerNote || "e.g., Medical certificate verified, recommended for approval."}
+                      value={managerNotes[leave.id] !== undefined ? managerNotes[leave.id] : (leave.managerNote || '')}
+                      onChange={(e) => setManagerNotes({ ...managerNotes, [leave.id]: e.target.value })}
+                      className="h-9 w-full rounded-lg border border-border bg-background px-3 text-xs outline-none focus:border-primary"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 self-end sm:self-center">
+                    <button
+                      type="button"
+                      data-testid={`button-manager-recommend-${leave.id}`}
+                      onClick={() => handleRecommend(leave.id, 'Recommended')}
+                      className={cx(
+                        "inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all cursor-pointer shadow-2xs",
+                        leave.managerRecommendation === 'Recommended'
+                          ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                          : "border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
+                      )}
+                    >
+                      <CheckCircle2 size={14} /> Recommend for HR
+                    </button>
+                    <button
+                      type="button"
+                      data-testid={`button-manager-flag-${leave.id}`}
+                      onClick={() => handleRecommend(leave.id, 'Flagged')}
+                      className={cx(
+                        "inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all cursor-pointer shadow-2xs",
+                        leave.managerRecommendation === 'Flagged'
+                          ? "bg-rose-600 text-white hover:bg-rose-700"
+                          : "border border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300"
+                      )}
+                    >
+                      <AlertCircle size={14} /> Flag Questionable
+                    </button>
+                  </div>
+                </div>
+
+                {leave.managerRecommendation && (
+                  <p className="mt-2 text-xs text-muted-foreground flex items-center gap-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
+                    Manager status: <span className="font-semibold text-foreground">{leave.managerRecommendation}</span>
+                    {leave.managerReviewedBy && ` by ${leave.managerReviewedBy}`}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <DocumentViewerModal doc={viewingDoc} onClose={() => setViewingDoc(null)} />
     </div>
   );
 }
@@ -2973,7 +4332,7 @@ function AppContent() {
     return <Shell role={role} setRole={setRole} onSignOut={signOut} currentUser={currentUser}>{component}</Shell>;
   };
 
-  return <Switch><Route path="/"><BackendSignIn setRole={setRole} onSignIn={signIn} /></Route><Route path="/employee/dashboard">{page(<EmployeeDashboard employees={employees} attendance={attendance} leaves={leaves} />)}</Route><Route path="/employee/attendance">{page(<EmployeeAttendance attendance={attendance} setAttendance={setAttendance} />)}</Route><Route path="/employee/leave">{page(<EmployeeLeave leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/employee/profile">{page(<EmployeeProfile role={role} employees={employees} setEmployees={setEmployees} currentUser={currentUser} />)}</Route><Route path="/manager/dashboard">{page(<ManagerDashboard />)}</Route><Route path="/hr/dashboard">{hrPage(<HRDashboard employees={employees} attendance={attendance} leaves={leaves} />)}</Route><Route path="/hr/registrations">{hrPage(<HRRegistrationsPage />)}</Route><Route path="/hr/employees">{hrPage(<HREmployees employees={employees} setEmployees={setEmployees} />)}</Route><Route path="/hr/access">{hrPage(<HRAccessPage />)}</Route><Route path="/hr/leave-requests">{hrPage(<HRLeaveRequests leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/hr/attendance">{hrPage(<HRAttendance attendance={attendance} employees={employees} />)}</Route><Route path="/hr/reports">{hrPage(<HRReports attendance={attendance} leaves={leaves} />)}</Route><Route path="/settings">{page(<SettingsPage role={role} />)}</Route><Route><BackendSignIn setRole={setRole} onSignIn={signIn} /></Route></Switch>;
+  return <Switch><Route path="/"><BackendSignIn setRole={setRole} onSignIn={signIn} /></Route><Route path="/employee/dashboard">{page(<EmployeeDashboard employees={employees} attendance={attendance} leaves={leaves} />)}</Route><Route path="/employee/attendance">{page(<EmployeeAttendance attendance={attendance} setAttendance={setAttendance} />)}</Route><Route path="/employee/leave">{page(<EmployeeLeave leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/employee/profile">{page(<EmployeeProfile role={role} employees={employees} setEmployees={setEmployees} currentUser={currentUser} />)}</Route><Route path="/manager/dashboard">{page(<ManagerDashboard leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/manager/leave-review">{page(<ManagerLeaveReview leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/hr/dashboard">{hrPage(<HRDashboard employees={employees} attendance={attendance} leaves={leaves} />)}</Route><Route path="/hr/registrations">{hrPage(<HRRegistrationsPage />)}</Route><Route path="/hr/employees">{hrPage(<HREmployees employees={employees} setEmployees={setEmployees} />)}</Route><Route path="/hr/access">{hrPage(<HRAccessPage />)}</Route><Route path="/hr/leave-requests">{hrPage(<HRLeaveRequests leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/hr/attendance">{hrPage(<HRAttendance attendance={attendance} employees={employees} />)}</Route><Route path="/hr/reports">{hrPage(<HRReports attendance={attendance} leaves={leaves} />)}</Route><Route path="/settings">{page(<SettingsPage role={role} />)}</Route><Route><BackendSignIn setRole={setRole} onSignIn={signIn} /></Route></Switch>;
 }
 function Router() { return <ErrorBoundary resetKey={window.location.pathname}><AppContent /></ErrorBoundary>; }
 function App() { return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><Router /></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>; }
