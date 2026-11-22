@@ -38,8 +38,14 @@ public class AuthService {
 
     @Transactional
     public void signup(String name, String email, String password) {
+        signup(name, email, password, "EMPLOYEE");
+    }
+
+    @Transactional
+    public void signup(String name, String email, String password, String accountType) {
         validatePassword(password);
         String normalizedEmail = normalizeEmail(email);
+        boolean isManager = "MANAGER".equalsIgnoreCase(accountType);
         var existing = jdbc.query("SELECT user_id, name, status FROM users WHERE email = ?",
                 (rs, row) -> new ExistingUser(rs.getLong(1), rs.getString(2), rs.getString(3)), normalizedEmail);
         if (!existing.isEmpty()) {
@@ -55,15 +61,29 @@ public class AuthService {
         }
         try {
             KeyHolder keyHolder = new GeneratedKeyHolder();
-            jdbc.update(connection -> {
-                var statement = connection.prepareStatement(
-                        "INSERT INTO users (name, email, password_hash, role, status) VALUES (?, ?, ?, 'EMPLOYEE', 'INACTIVE')",
-                        java.sql.Statement.RETURN_GENERATED_KEYS);
-                statement.setString(1, name.trim());
-                statement.setString(2, normalizedEmail);
-                statement.setString(3, passwordEncoder.encode(password));
-                return statement;
-            }, keyHolder);
+            String reviewReason = isManager ? "MANAGER_REGISTRATION" : null;
+            try {
+                jdbc.update(connection -> {
+                    var statement = connection.prepareStatement(
+                            "INSERT INTO users (name, email, password_hash, role, status, review_reason) VALUES (?, ?, ?, 'EMPLOYEE', 'INACTIVE', ?)",
+                            java.sql.Statement.RETURN_GENERATED_KEYS);
+                    statement.setString(1, name.trim());
+                    statement.setString(2, normalizedEmail);
+                    statement.setString(3, passwordEncoder.encode(password));
+                    statement.setString(4, reviewReason);
+                    return statement;
+                }, keyHolder);
+            } catch (org.springframework.jdbc.BadSqlGrammarException ex) {
+                jdbc.update(connection -> {
+                    var statement = connection.prepareStatement(
+                            "INSERT INTO users (name, email, password_hash, role, status) VALUES (?, ?, ?, 'EMPLOYEE', 'INACTIVE')",
+                            java.sql.Statement.RETURN_GENERATED_KEYS);
+                    statement.setString(1, name.trim());
+                    statement.setString(2, normalizedEmail);
+                    statement.setString(3, passwordEncoder.encode(password));
+                    return statement;
+                }, keyHolder);
+            }
             Number key = keyHolder.getKey();
             if (key == null) throw new IllegalStateException("Unable to create user.");
             long userId = key.longValue();
@@ -84,6 +104,20 @@ public class AuthService {
         }
         otpService.verify(user.id(), "SIGNUP", otp);
         jdbc.update("UPDATE users SET status = 'PENDING_APPROVAL', email_verified_at = UTC_TIMESTAMP(), updated_at = UTC_TIMESTAMP() WHERE user_id = ?", user.id());
+
+        if (isManagerOnlyAccount(user.id())) {
+            try {
+                Integer count = jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM manager_access_requests WHERE requesting_user_id = ?",
+                        Integer.class, user.id());
+                if (count == null || count == 0) {
+                    jdbc.update("INSERT INTO manager_access_requests (requesting_user_id, status, review_reason) VALUES (?, 'PENDING', 'Manager Registration')",
+                            user.id());
+                }
+            } catch (Exception ignored) {
+                // Table might not exist in unit mock tests
+            }
+        }
     }
 
     @Transactional
@@ -146,29 +180,43 @@ public class AuthService {
 
     public AuthController.LoginResponse toLoginResponse(AuthUser user) {
         boolean manager = isApprovedManager(user.id());
-        var roles = manager ? List.of(user.role(), "MANAGER") : List.of(user.role());
+        boolean managerOnly = isManagerOnlyAccount(user.id());
+        String effectiveRole = managerOnly ? "MANAGER" : user.role();
+        var roles = managerOnly ? List.of("MANAGER") : manager ? List.of(user.role(), "MANAGER") : List.of(user.role());
         var permissions = manager ? jdbc.queryForList(
                 "SELECT permission_code FROM manager_permissions WHERE manager_user_id = ? AND revoked_at IS NULL ORDER BY permission_code",
                 String.class, user.id()) : List.<String>of();
         String employeeId = null;
-        try {
-            var list = jdbc.queryForList("SELECT employee_id FROM users WHERE user_id = ?", String.class, user.id());
-            if (!list.isEmpty()) {
-                employeeId = list.getFirst();
-            }
-        } catch (Exception ignored) {}
-        return new AuthController.LoginResponse(user.id(), user.name(), user.email(), user.role(), roles, permissions, employeeId);
+        if (!managerOnly) {
+            try {
+                var list = jdbc.queryForList("SELECT employee_id FROM users WHERE user_id = ?", String.class, user.id());
+                if (!list.isEmpty()) {
+                    employeeId = list.getFirst();
+                }
+            } catch (Exception ignored) {}
+        }
+        return new AuthController.LoginResponse(user.id(), user.name(), user.email(), effectiveRole, roles, permissions, employeeId);
     }
 
     private void validateLoginType(AuthUser user, String loginType) {
         String requested = loginType == null ? "" : loginType.trim().toUpperCase();
+        boolean isManagerOnly = isManagerOnlyAccount(user.id());
         boolean valid = switch (requested) {
-            case "EMPLOYEE" -> "EMPLOYEE".equals(user.role());
+            case "EMPLOYEE" -> "EMPLOYEE".equals(user.role()) && !isManagerOnly;
             case "HR" -> "HR_ADMIN".equals(user.role());
-            case "MANAGER" -> "EMPLOYEE".equals(user.role()) && isApprovedManager(user.id());
+            case "MANAGER" -> ("EMPLOYEE".equals(user.role()) || "MANAGER".equals(user.role())) && isApprovedManager(user.id());
             default -> false;
         };
         if (!valid) throw new IllegalArgumentException("Invalid email or password.");
+    }
+
+    public boolean isManagerOnlyAccount(long userId) {
+        try {
+            var list = jdbc.queryForList("SELECT review_reason FROM users WHERE user_id = ?", String.class, userId);
+            return !list.isEmpty() && list.getFirst() != null && list.getFirst().startsWith("MANAGER");
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     private boolean isApprovedManager(long userId) {

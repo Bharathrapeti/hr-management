@@ -213,4 +213,82 @@ class HrApprovalWorkflowTest {
         controller.registrations();
         verify(mockHrService).registrations();
     }
+
+    @Test
+    void managerSignupVerificationInsertsManagerAccessRequest() {
+        when(jdbc.query(contains("SELECT user_id, name, email, role, status FROM users WHERE email = ?"),
+                any(RowMapper.class), eq("manager@example.com")))
+                .thenReturn(List.of(new AuthUser(50L, "Manager One", "manager@example.com", "EMPLOYEE", "INACTIVE")));
+        when(jdbc.queryForList(contains("SELECT review_reason FROM users WHERE user_id = ?"), eq(String.class), eq(50L)))
+                .thenReturn(List.of("MANAGER_REGISTRATION"));
+        when(jdbc.queryForObject(contains("COUNT(*) FROM manager_access_requests WHERE requesting_user_id = ?"), eq(Integer.class), eq(50L)))
+                .thenReturn(0);
+
+        authService.verifySignup("manager@example.com", "123456");
+
+        verify(otpService).verify(50L, "SIGNUP", "123456");
+        verify(jdbc).update(contains("UPDATE users SET status = 'PENDING_APPROVAL'"), eq(50L));
+        verify(jdbc).update(contains("INSERT INTO manager_access_requests"), eq(50L));
+    }
+
+    @Test
+    void managerOnlyAccountCannotSignInAsEmployee() {
+        when(jdbc.queryForObject(contains("COUNT(*) FROM auth_login_attempts"), eq(Long.class), anyString(), anyString()))
+                .thenReturn(0L);
+        when(jdbc.query(contains("SELECT user_id, name, email, role, status FROM users WHERE email = ?"),
+                any(RowMapper.class), eq("manager@example.com")))
+                .thenReturn(List.of(new AuthUser(50L, "Manager One", "manager@example.com", "EMPLOYEE", "ACTIVE")));
+        when(jdbc.queryForObject(contains("SELECT password_hash FROM users WHERE user_id = ?"), eq(String.class), eq(50L)))
+                .thenReturn("hashed-password");
+        when(passwordEncoder.matches("StrongPass1", "hashed-password")).thenReturn(true);
+        when(jdbc.queryForList(contains("SELECT review_reason FROM users WHERE user_id = ?"), eq(String.class), eq(50L)))
+                .thenReturn(List.of("MANAGER_REGISTRATION"));
+
+        assertThatThrownBy(() -> authService.login("manager@example.com", "StrongPass1", "EMPLOYEE", "127.0.0.1"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Invalid email or password.");
+    }
+
+    @Test
+    void managerOnlyAccountCanSignInAsManagerWhenApproved() {
+        when(jdbc.queryForObject(contains("COUNT(*) FROM auth_login_attempts"), eq(Long.class), anyString(), anyString()))
+                .thenReturn(0L);
+        when(jdbc.query(contains("SELECT user_id, name, email, role, status FROM users WHERE email = ?"),
+                any(RowMapper.class), eq("manager@example.com")))
+                .thenReturn(List.of(new AuthUser(50L, "Manager One", "manager@example.com", "EMPLOYEE", "ACTIVE")));
+        when(jdbc.queryForObject(contains("SELECT password_hash FROM users WHERE user_id = ?"), eq(String.class), eq(50L)))
+                .thenReturn("hashed-password");
+        when(passwordEncoder.matches("StrongPass1", "hashed-password")).thenReturn(true);
+        when(jdbc.queryForList(contains("SELECT review_reason FROM users WHERE user_id = ?"), eq(String.class), eq(50L)))
+                .thenReturn(List.of("MANAGER_REGISTRATION"));
+        when(jdbc.queryForObject(contains("COUNT(*) FROM manager_access_requests WHERE requesting_user_id = ? AND status = 'APPROVED'"),
+                eq(Integer.class), eq(50L))).thenReturn(1);
+
+        AuthUser user = authService.login("manager@example.com", "StrongPass1", "MANAGER", "127.0.0.1");
+        assertThat(user).isNotNull();
+
+        AuthController.LoginResponse response = authService.toLoginResponse(user);
+        assertThat(response.role()).isEqualTo("MANAGER");
+        assertThat(response.effectiveRoles()).containsExactly("MANAGER");
+        assertThat(response.employeeId()).isNull();
+    }
+
+    @Test
+    void hrApproveManagerAccessRequestActivatesUserAccount() {
+        long hrUserId = 1L;
+        long requestId = 100L;
+        long targetUserId = 50L;
+
+        when(jdbc.queryForObject(contains("COUNT(*) FROM users WHERE user_id = ? AND role = 'HR_ADMIN' AND status = 'ACTIVE'"),
+                eq(Integer.class), eq(hrUserId))).thenReturn(1);
+        when(jdbc.queryForList(contains("SELECT requesting_user_id FROM manager_access_requests WHERE request_id = ? AND status = 'PENDING'"),
+                eq(Long.class), eq(requestId))).thenReturn(List.of(targetUserId));
+        when(jdbc.update(contains("UPDATE manager_access_requests SET status = 'APPROVED'"),
+                eq(hrUserId), eq(requestId), eq(hrUserId))).thenReturn(1);
+
+        hrService.approve(requestId, hrUserId);
+
+        verify(jdbc).update(contains("UPDATE manager_access_requests SET status = 'APPROVED'"), eq(hrUserId), eq(requestId), eq(hrUserId));
+        verify(jdbc).update(contains("UPDATE users SET status = 'ACTIVE'"), eq(hrUserId), eq(targetUserId));
+    }
 }

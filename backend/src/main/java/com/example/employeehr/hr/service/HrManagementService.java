@@ -250,7 +250,7 @@ public class HrManagementService {
                     FROM users u
                     LEFT JOIN users r ON r.user_id = u.reviewed_by_hr_user_id
                     LEFT JOIN users m ON m.user_id = u.assigned_manager_user_id
-                    WHERE u.role = 'EMPLOYEE'
+                    WHERE u.role = 'EMPLOYEE' AND (u.review_reason IS NULL OR u.review_reason NOT LIKE 'MANAGER%')
                     ORDER BY
                         CASE WHEN u.status = 'PENDING_APPROVAL' THEN 1 ELSE 2 END,
                         u.created_at DESC
@@ -285,7 +285,7 @@ public class HrManagementService {
                        u.reviewed_by_hr_user_id, r.name, u.reviewed_at, u.review_reason
                 FROM users u
                 LEFT JOIN users r ON r.user_id = u.reviewed_by_hr_user_id
-                WHERE u.role = 'EMPLOYEE'
+                WHERE u.role = 'EMPLOYEE' AND (u.review_reason IS NULL OR u.review_reason NOT LIKE 'MANAGER%')
                 ORDER BY
                     CASE WHEN u.status = 'PENDING_APPROVAL' THEN 1 ELSE 2 END,
                     u.created_at DESC
@@ -506,19 +506,33 @@ public class HrManagementService {
     @Transactional
     public void approve(long requestId, long actorId) {
         ensureHr(actorId);
+        List<Long> requestingUserIds = jdbc.queryForList(
+                "SELECT requesting_user_id FROM manager_access_requests WHERE request_id = ? AND status = 'PENDING'",
+                Long.class, requestId);
         int updated = jdbc.update(
                 "UPDATE manager_access_requests SET status = 'APPROVED', reviewed_by_hr_user_id = ?, reviewed_at = UTC_TIMESTAMP() WHERE request_id = ? AND status = 'PENDING' AND requesting_user_id <> ?",
                 actorId, requestId, actorId);
         if (updated == 0) throw new IllegalArgumentException("Request is not pending or cannot be approved.");
+        if (!requestingUserIds.isEmpty()) {
+            jdbc.update("UPDATE users SET status = 'ACTIVE', reviewed_by_hr_user_id = ?, reviewed_at = UTC_TIMESTAMP(), updated_at = UTC_TIMESTAMP() WHERE user_id = ? AND status = 'PENDING_APPROVAL'",
+                    actorId, requestingUserIds.getFirst());
+        }
     }
 
     @Transactional
     public void reject(long requestId, long actorId, String reason) {
         ensureHr(actorId);
+        List<Long> requestingUserIds = jdbc.queryForList(
+                "SELECT requesting_user_id FROM manager_access_requests WHERE request_id = ? AND status = 'PENDING'",
+                Long.class, requestId);
         int updated = jdbc.update(
                 "UPDATE manager_access_requests SET status = 'REJECTED', reviewed_by_hr_user_id = ?, reviewed_at = UTC_TIMESTAMP(), review_reason = ? WHERE request_id = ? AND status = 'PENDING' AND requesting_user_id <> ?",
                 actorId, reason, requestId, actorId);
         if (updated == 0) throw new IllegalArgumentException("Request is not pending or cannot be rejected.");
+        if (!requestingUserIds.isEmpty()) {
+            jdbc.update("UPDATE users SET status = 'REJECTED', reviewed_by_hr_user_id = ?, reviewed_at = UTC_TIMESTAMP(), review_reason = ?, updated_at = UTC_TIMESTAMP() WHERE user_id = ? AND status = 'PENDING_APPROVAL'",
+                    actorId, reason, requestingUserIds.getFirst());
+        }
     }
 
     @Transactional

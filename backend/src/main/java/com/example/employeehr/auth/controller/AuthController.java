@@ -25,7 +25,11 @@ public class AuthController {
 
     @PostMapping("/signup")
     public Message signup(@Valid @RequestBody SignupRequest request) {
-        authService.signup(request.name(), request.email(), request.password());
+        if (request.accountType() != null && !request.accountType().isBlank() && !"EMPLOYEE".equalsIgnoreCase(request.accountType())) {
+            authService.signup(request.name(), request.email(), request.password(), request.accountType());
+        } else {
+            authService.signup(request.name(), request.email(), request.password());
+        }
         return new Message("Verification OTP sent if SMTP is configured.");
     }
 
@@ -98,7 +102,11 @@ public class AuthController {
     public record SignupRequest(
             @NotBlank @Size(max = 160) String name,
             @NotBlank @Email @Size(max = 320) String email,
-            @NotBlank @Size(min = 8, max = 128) String password) {
+            @NotBlank @Size(min = 8, max = 128) String password,
+            String accountType) {
+        public SignupRequest(String name, String email, String password) {
+            this(name, email, password, null);
+        }
     }
 
     public record LoginRequest(@NotBlank @Email String email, @NotBlank String password,

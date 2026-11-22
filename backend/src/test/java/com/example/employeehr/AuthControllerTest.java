@@ -22,6 +22,13 @@ class AuthControllerTest {
     }
 
     @Test
+    void signupDelegatesWithManagerAccountType() {
+        controller.signup(new AuthController.SignupRequest("Alex Manager", "alex.mgr@example.com", "StrongPass1", "MANAGER"));
+
+        verify(authService).signup("Alex Manager", "alex.mgr@example.com", "StrongPass1", "MANAGER");
+    }
+
+    @Test
     void passwordResetPassesConfirmationPasswordToService() {
         controller.resetPassword(new AuthController.ResetPasswordRequest(
                 "maya@example.com", "123456", "NewStrong1", "NewStrong1"));

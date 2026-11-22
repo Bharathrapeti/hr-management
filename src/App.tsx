@@ -981,6 +981,7 @@ function BackendSignIn({ setRole, onSignIn }: { setRole: (role: Role) => void; o
   const [mode, setMode] = useState<LoginMode>('login');
   const [step, setStep] = useState<'form' | 'otp'>('form');
   const [loginType, setLoginType] = useState<'EMPLOYEE' | 'HR' | 'MANAGER'>('EMPLOYEE');
+  const [signupType, setSignupType] = useState<'EMPLOYEE' | 'MANAGER'>('EMPLOYEE');
   const [form, setForm] = useState({ name: '', email: '', password: '', confirmPassword: '', otp: '' });
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
@@ -1019,20 +1020,33 @@ function BackendSignIn({ setRole, onSignIn }: { setRole: (role: Role) => void; o
       } else if (mode === 'signup' && step === 'form') {
         await authRequest<AuthMessage>('/api/auth/signup', {
           method: 'POST',
-          body: JSON.stringify({ name: form.name, email: form.email, password: form.password }),
+          body: JSON.stringify({
+            name: form.name,
+            email: form.email,
+            password: form.password,
+            accountType: signupType,
+          }),
         });
         setStep('otp');
         setCooldown(60);
         setMessage('A verification code was sent to your email address.');
       } else if (mode === 'signup') {
-        await authRequest<AuthMessage>('/api/auth/signup/verify', {
+        const res = await authRequest<AuthMessage>('/api/auth/signup/verify', {
           method: 'POST',
           body: JSON.stringify({ email: form.email, otp: form.otp }),
         });
         setMode('login');
         setStep('form');
         setCooldown(0);
-        setMessage('Email verified successfully. Your account is pending HR administrator approval before you can sign in.');
+        if (signupType === 'MANAGER') {
+          setLoginType('MANAGER');
+        }
+        setMessage(
+          res?.message ||
+            (signupType === 'MANAGER'
+              ? 'Email verified successfully. Your manager registration is pending HR administrator approval before you can sign in.'
+              : 'Email verified successfully. Your account is pending HR administrator approval before you can sign in.')
+        );
         setForm((current) => ({ ...current, password: '', otp: '' }));
       } else if (step === 'form') {
         await authRequest<AuthMessage>(
@@ -1080,7 +1094,7 @@ function BackendSignIn({ setRole, onSignIn }: { setRole: (role: Role) => void; o
       await ensureCsrf();
       const path = mode === 'signup' ? '/api/auth/signup' : '/api/auth/password/forgot';
       const body = mode === 'signup'
-        ? { name: form.name, email: form.email, password: form.password }
+        ? { name: form.name, email: form.email, password: form.password, accountType: signupType }
         : { email: form.email };
       await authRequest<AuthMessage>(path, { method: 'POST', body: JSON.stringify(body) }, mode === 'reset');
       setCooldown(60);
@@ -1092,12 +1106,32 @@ function BackendSignIn({ setRole, onSignIn }: { setRole: (role: Role) => void; o
     }
   };
   const title = mode === 'login' ? 'Welcome back' : mode === 'signup' ? 'Create your account' : 'Reset your password';
-  const detail = mode === 'login' ? 'Sign in with your Meridian account.' : mode === 'signup' ? 'Create an employee account and verify your email. HR approval is required before sign in.' : 'Verify your email before setting a new password.';
+  const detail = mode === 'login'
+    ? 'Sign in with your Meridian account.'
+    : mode === 'signup'
+    ? signupType === 'MANAGER'
+      ? 'Create a manager account and verify your email. HR approval is required before sign in.'
+      : 'Create an employee account and verify your email. HR approval is required before sign in.'
+    : 'Verify your email before setting a new password.';
   return <div className="grain min-h-[100dvh] bg-[#eff4f0]"><div className="mx-auto grid min-h-[100dvh] max-w-[1440px] lg:grid-cols-[1.05fr_.95fr]">
     <div className="relative hidden overflow-hidden bg-sidebar p-10 lg:flex lg:flex-col lg:justify-between"><div><LogoMark /><div className="mt-28 max-w-lg"><div className="mono mb-5 text-xs font-bold uppercase tracking-[.2em] text-sidebar-primary">A better rhythm for work</div><h1 className="text-6xl font-bold leading-[.96] tracking-[-.065em] text-white">Every hour,<br /><span className="text-sidebar-primary">accounted for.</span></h1><p className="mt-7 max-w-md text-base leading-7 text-slate-400">A clear, human way to keep attendance, leave, and people records moving together.</p></div></div><div className="flex items-center justify-between text-xs text-slate-500"><span>Meridian HR</span><span className="flex items-center gap-2"><ShieldCheck size={14} /> Private by design</span></div></div>
     <div className="flex items-center justify-center p-6 sm:p-12"><div className="w-full max-w-[440px]"><div className="mb-12 lg:hidden"><LogoMark /></div><div className="mb-9"><Badge tone="info"><Activity size={12} /> Secure sign in</Badge><h2 className="mt-5 text-3xl font-bold tracking-[-.04em]">{title}</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">{detail}</p></div>
       <form onSubmit={submit} className="space-y-4">
         {mode === 'login' && <label className="block text-sm font-medium">Sign in as<select data-testid="select-login-type" value={loginType} onChange={(event) => setLoginType(event.target.value as 'EMPLOYEE' | 'HR' | 'MANAGER')} className="mt-2 h-11 w-full rounded-lg border border-input bg-card px-3 text-sm outline-none focus:border-primary"><option value="EMPLOYEE">Employee</option><option value="HR">HR administrator</option><option value="MANAGER">Manager</option></select></label>}
+        {mode === 'signup' && step === 'form' && (
+          <label className="block text-sm font-medium">
+            Create account as
+            <select
+              data-testid="select-signup-account-type"
+              value={signupType}
+              onChange={(event) => setSignupType(event.target.value as 'EMPLOYEE' | 'MANAGER')}
+              className="mt-2 h-11 w-full rounded-lg border border-input bg-card px-3 text-sm outline-none focus:border-primary"
+            >
+              <option value="EMPLOYEE">Employee</option>
+              <option value="MANAGER">Manager</option>
+            </select>
+          </label>
+        )}
         {mode === 'signup' && step === 'form' && <label className="block text-sm font-medium">Full name<input required value={form.name} onChange={(event) => update('name', event.target.value)} className="mt-2 h-11 w-full rounded-lg border border-input bg-card px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" /></label>}
         <label className="block text-sm font-medium">Email address<input required type="email" autoComplete="email" value={form.email} onChange={(event) => update('email', event.target.value)} placeholder="you@northstar.edu" className="mt-2 h-11 w-full rounded-lg border border-input bg-card px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" /></label>
         {step === 'otp' && <label className="block text-sm font-medium">Verification code<input required inputMode="numeric" pattern="[0-9]{6}" maxLength={6} value={form.otp} onChange={(event) => update('otp', event.target.value)} placeholder="6-digit code" className="mt-2 h-11 w-full rounded-lg border border-input bg-card px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" /></label>}
@@ -1107,7 +1141,7 @@ function BackendSignIn({ setRole, onSignIn }: { setRole: (role: Role) => void; o
         {message && <p role="alert" className={cx('text-xs font-semibold', message.includes('successfully') || message.includes('updated') ? 'text-emerald-700' : 'text-rose-700')}>{message}</p>}
       </form>
       {step === 'otp' && <button type="button" disabled={busy || cooldown > 0} onClick={resend} className="mt-4 w-full text-xs font-semibold text-primary disabled:opacity-50 disabled:cursor-not-allowed">{cooldown > 0 ? `Resend verification code (${cooldown}s)` : 'Resend verification code'}</button>}
-      <div className="mt-4 flex justify-between text-xs font-semibold text-primary"><button type="button" onClick={() => { setMode('signup'); setStep('form'); setMessage(''); setCooldown(0); ensureCsrf().catch(() => {}); }}>Create account</button><button type="button" onClick={() => { setMode('reset'); setStep('form'); setMessage(''); setCooldown(0); ensureCsrf(true).catch(() => {}); }}>Forgot password?</button></div>
+      <div className="mt-4 flex justify-between text-xs font-semibold text-primary"><button type="button" onClick={() => { setMode('signup'); setStep('form'); setMessage(''); setCooldown(0); setSignupType('EMPLOYEE'); ensureCsrf().catch(() => {}); }}>Create account</button><button type="button" onClick={() => { setMode('reset'); setStep('form'); setMessage(''); setCooldown(0); ensureCsrf(true).catch(() => {}); }}>Forgot password?</button></div>
       {mode !== 'login' && <button type="button" onClick={() => { setMode('login'); setStep('form'); setMessage(''); setCooldown(0); ensureCsrf().catch(() => {}); }} className="mt-3 w-full text-xs text-muted-foreground hover:text-foreground">Back to sign in</button>}
       <div className="mt-5 border-t border-border pt-5"><div className="flex items-start gap-3 text-xs leading-5 text-muted-foreground"><ShieldCheck size={16} className="mt-0.5 shrink-0 text-primary" /><span><strong className="font-semibold text-foreground">Secure authentication.</strong> Passwords and sessions are managed by the Spring Boot backend.</span></div></div>
     </div></div>

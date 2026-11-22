@@ -40,8 +40,11 @@ public class AuthSessionFilter extends OncePerRequestFilter {
             if (!users.isEmpty()) {
                 AuthUser user = users.getFirst();
                 var authorities = new java.util.ArrayList<SimpleGrantedAuthority>();
-                authorities.add(new SimpleGrantedAuthority("ROLE_" + user.role()));
-                if ("EMPLOYEE".equals(user.role()) && managerAccessService.isApprovedManager(user.id())) {
+                boolean managerOnly = isManagerOnlyAccount(user.id());
+                if (!managerOnly) {
+                    authorities.add(new SimpleGrantedAuthority("ROLE_" + user.role()));
+                }
+                if (managerAccessService.isApprovedManager(user.id())) {
                     authorities.add(new SimpleGrantedAuthority("ROLE_MANAGER"));
                     managerAccessService.permissions(user.id()).forEach(permission ->
                             authorities.add(new SimpleGrantedAuthority("PERM_" + permission)));
@@ -51,6 +54,15 @@ public class AuthSessionFilter extends OncePerRequestFilter {
             }
         }
         chain.doFilter(request, response);
+    }
+
+    private boolean isManagerOnlyAccount(long userId) {
+        try {
+            var list = jdbc.queryForList("SELECT review_reason FROM users WHERE user_id = ?", String.class, userId);
+            return !list.isEmpty() && list.getFirst() != null && list.getFirst().startsWith("MANAGER");
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     private String readCookie(HttpServletRequest request, String name) {
