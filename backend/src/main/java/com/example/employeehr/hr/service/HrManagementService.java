@@ -62,12 +62,19 @@ public class HrManagementService {
             var list = jdbc.query(
                     "SELECT user_id, employee_id, name, email, gender, date_of_birth, residential_address, mobile_number, role, status FROM users WHERE user_id = ?",
                     (rs, row) -> {
+                        String empId = rs.getString(2);
+                        if (empId == null || empId.isBlank()) {
+                            empId = generateNextEmployeeId();
+                            try {
+                                jdbc.update("UPDATE users SET employee_id = ? WHERE user_id = ? AND (employee_id IS NULL OR employee_id = '')", empId, rs.getLong(1));
+                            } catch (Exception ignored) {}
+                        }
                         java.sql.Date dob = rs.getDate(6);
                         LocalDate localDob = dob != null ? dob.toLocalDate() : null;
                         Integer age = localDob != null ? Period.between(localDob, LocalDate.now()).getYears() : null;
                         return new PersonalDetailsView(
                                 rs.getLong(1),
-                                rs.getString(2),
+                                empId,
                                 rs.getString(3),
                                 rs.getString(4),
                                 rs.getString(5),
@@ -95,19 +102,28 @@ public class HrManagementService {
     private PersonalDetailsView fallbackPersonalDetails(long userId) {
         var list = jdbc.query(
                 "SELECT user_id, employee_id, name, email, role, status FROM users WHERE user_id = ?",
-                (rs, row) -> new PersonalDetailsView(
-                        rs.getLong(1),
-                        rs.getString(2),
-                        rs.getString(3),
-                        rs.getString(4),
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        rs.getString(5),
-                        rs.getString(6)
-                ), userId);
+                (rs, row) -> {
+                    String empId = rs.getString(2);
+                    if (empId == null || empId.isBlank()) {
+                        empId = generateNextEmployeeId();
+                        try {
+                            jdbc.update("UPDATE users SET employee_id = ? WHERE user_id = ? AND (employee_id IS NULL OR employee_id = '')", empId, rs.getLong(1));
+                        } catch (Exception ignored) {}
+                    }
+                    return new PersonalDetailsView(
+                            rs.getLong(1),
+                            empId,
+                            rs.getString(3),
+                            rs.getString(4),
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            rs.getString(5),
+                            rs.getString(6)
+                    );
+                }, userId);
         if (list.isEmpty()) throw new IllegalArgumentException("User not found.");
         return list.getFirst();
     }
@@ -165,19 +181,50 @@ public class HrManagementService {
                 name.trim(), employeeId == null || employeeId.isBlank() ? null : employeeId.trim(), userId);
     }
 
+    public synchronized String generateNextEmployeeId() {
+        try {
+            List<String> existingIds = jdbc.queryForList(
+                    "SELECT employee_id FROM users WHERE employee_id IS NOT NULL", String.class);
+            long highest = 1042;
+            for (String id : existingIds) {
+                if (id != null && id.startsWith("EMP-")) {
+                    try {
+                        long num = Long.parseLong(id.substring(4).trim());
+                        if (num > highest) {
+                            highest = num;
+                        }
+                    } catch (NumberFormatException ignored) {
+                    }
+                }
+            }
+            long candidateNum = highest + 1;
+            while (true) {
+                String candidate = String.format("EMP-%04d", candidateNum);
+                if (!existingIds.contains(candidate)) {
+                    return candidate;
+                }
+                candidateNum++;
+            }
+        } catch (Exception ex) {
+            return "EMP-" + System.currentTimeMillis();
+        }
+    }
+
     @Transactional
     public void createEmployee(String name, String email, long actorId) {
         if (name == null || name.isBlank() || name.length() > 160) throw new IllegalArgumentException("Name is invalid.");
         if (email == null || email.isBlank() || email.length() > 320) throw new IllegalArgumentException("Email is invalid.");
         try {
+            String empId = generateNextEmployeeId();
             var key = new org.springframework.jdbc.support.GeneratedKeyHolder();
             jdbc.update(connection -> {
                 var statement = connection.prepareStatement(
-                        "INSERT INTO users (name, email, password_hash, role, status) VALUES (?, ?, ?, 'EMPLOYEE', 'INACTIVE')",
+                        "INSERT INTO users (name, email, password_hash, role, status, employee_id) VALUES (?, ?, ?, 'EMPLOYEE', 'INACTIVE', ?)",
                         java.sql.Statement.RETURN_GENERATED_KEYS);
                 statement.setString(1, name.trim());
                 statement.setString(2, email.trim().toLowerCase());
                 statement.setString(3, "INVITATION_PENDING");
+                statement.setString(4, empId);
                 return statement;
             }, key);
             if (key.getKey() == null) throw new IllegalStateException("Unable to create employee.");
@@ -315,6 +362,12 @@ public class HrManagementService {
                 actorId, userId);
         if (updated == 0) {
             throw new IllegalArgumentException("Registration is not pending or cannot be approved.");
+        }
+        if (target.employeeId() == null || target.employeeId().isBlank()) {
+            String empId = generateNextEmployeeId();
+            try {
+                jdbc.update("UPDATE users SET employee_id = ? WHERE user_id = ? AND (employee_id IS NULL OR employee_id = '')", empId, userId);
+            } catch (Exception ignored) {}
         }
         sendSafeApprovalNotification(target.email(), target.name());
     }

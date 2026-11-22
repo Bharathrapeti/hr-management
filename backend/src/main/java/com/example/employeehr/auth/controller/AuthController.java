@@ -129,7 +129,11 @@ public class AuthController {
     }
 
     public record LoginResponse(long id, String name, String email, String role,
-            java.util.List<String> effectiveRoles, java.util.List<String> permissions) {
+            java.util.List<String> effectiveRoles, java.util.List<String> permissions, String employeeId) {
+        public LoginResponse(long id, String name, String email, String role,
+                java.util.List<String> effectiveRoles, java.util.List<String> permissions) {
+            this(id, name, email, role, effectiveRoles, permissions, null);
+        }
     }
 
     public record Message(String message) {

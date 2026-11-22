@@ -7,6 +7,7 @@ export type AuthUser = {
   role: 'EMPLOYEE' | 'HR_ADMIN';
   effectiveRoles?: string[];
   permissions?: string[];
+  employeeId?: string | null;
 };
 export type AuthMessage = { message: string };
 

@@ -379,4 +379,41 @@ class PersonalDetailsAndManagerApprovalTest {
         assertThat(eligible).hasSize(1);
         assertThat(eligible.get(0).name()).isEqualTo("Manager Jane");
     }
+
+    @Test
+    void generateNextEmployeeIdProducesUniqueSequentialId() {
+        when(jdbc.queryForList(contains("SELECT employee_id FROM users WHERE employee_id IS NOT NULL"), eq(String.class)))
+                .thenReturn(List.of("EMP-1042", "EMP-1037", "EMP-1028", "EMP-0991"));
+
+        String nextId = hrService.generateNextEmployeeId();
+        assertThat(nextId).isEqualTo("EMP-1043");
+    }
+
+    @Test
+    void getPersonalDetailsAutoGeneratesAndPersistsEmployeeIdWhenNull() {
+        when(jdbc.queryForList(contains("SELECT employee_id FROM users WHERE employee_id IS NOT NULL"), eq(String.class)))
+                .thenReturn(List.of("EMP-1042", "EMP-1037", "EMP-1028", "EMP-0991"));
+
+        when(jdbc.query(contains("SELECT user_id, employee_id, name, email, gender, date_of_birth, residential_address, mobile_number, role, status FROM users WHERE user_id = ?"),
+                any(RowMapper.class), eq(50L)))
+                .thenAnswer(invocation -> {
+                    RowMapper<?> mapper = invocation.getArgument(1);
+                    java.sql.ResultSet rs = mock(java.sql.ResultSet.class);
+                    when(rs.getLong(1)).thenReturn(50L);
+                    when(rs.getString(2)).thenReturn(null); // null employee_id
+                    when(rs.getString(3)).thenReturn("New Employee");
+                    when(rs.getString(4)).thenReturn("newemp@example.com");
+                    when(rs.getString(5)).thenReturn("MALE");
+                    when(rs.getDate(6)).thenReturn(null);
+                    when(rs.getString(7)).thenReturn(null);
+                    when(rs.getString(8)).thenReturn(null);
+                    when(rs.getString(9)).thenReturn("EMPLOYEE");
+                    when(rs.getString(10)).thenReturn("ACTIVE");
+                    return List.of(mapper.mapRow(rs, 1));
+                });
+
+        HrManagementService.PersonalDetailsView details = hrService.getPersonalDetails(50L);
+        assertThat(details.employeeId()).isEqualTo("EMP-1043");
+        verify(jdbc).update(contains("UPDATE users SET employee_id = ? WHERE user_id = ?"), eq("EMP-1043"), eq(50L));
+    }
 }

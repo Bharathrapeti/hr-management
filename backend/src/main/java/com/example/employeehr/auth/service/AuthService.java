@@ -150,7 +150,14 @@ public class AuthService {
         var permissions = manager ? jdbc.queryForList(
                 "SELECT permission_code FROM manager_permissions WHERE manager_user_id = ? AND revoked_at IS NULL ORDER BY permission_code",
                 String.class, user.id()) : List.<String>of();
-        return new AuthController.LoginResponse(user.id(), user.name(), user.email(), user.role(), roles, permissions);
+        String employeeId = null;
+        try {
+            var list = jdbc.queryForList("SELECT employee_id FROM users WHERE user_id = ?", String.class, user.id());
+            if (!list.isEmpty()) {
+                employeeId = list.getFirst();
+            }
+        } catch (Exception ignored) {}
+        return new AuthController.LoginResponse(user.id(), user.name(), user.email(), user.role(), roles, permissions, employeeId);
     }
 
     private void validateLoginType(AuthUser user, String loginType) {
