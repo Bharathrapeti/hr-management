@@ -465,4 +465,35 @@ test('CSRF lifecycle and synchronization regression tests', async (t) => {
       }
     );
   });
+
+  await t.test('employee identity isolation: /api/auth/me returns unique employeeId for new account', async () => {
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const path = url.toString();
+      if (path.endsWith('/api/auth/me')) {
+        return new Response(
+          JSON.stringify({
+            id: 88,
+            name: 'New Employee',
+            email: 'new.employee@northstar.edu',
+            role: 'EMPLOYEE',
+            effectiveRoles: ['EMPLOYEE'],
+            permissions: [],
+            employeeId: 'EMP-1043',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      throw new Error(`Unexpected url: ${path}`);
+    }) as typeof fetch;
+
+    const user = await authRequest<any>('/api/auth/me', { method: 'GET' });
+    assert.equal(user.name, 'New Employee');
+    assert.equal(user.email, 'new.employee@northstar.edu');
+    assert.equal(user.employeeId, 'EMP-1043');
+    // Must never match Maya Chen, Jon Bell, Priya Nair, or Elliot Hart
+    assert.notEqual(user.employeeId, 'EMP-1042');
+    assert.notEqual(user.employeeId, 'EMP-1037');
+    assert.notEqual(user.employeeId, 'EMP-1028');
+    assert.notEqual(user.employeeId, 'EMP-0991');
+  });
 });
