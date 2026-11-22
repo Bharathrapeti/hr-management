@@ -64,6 +64,7 @@ type DemoAccount = { email: string; password: string; role: Role };
 
 type PersonalDetails = {
   id: number;
+  employeeId?: string | null;
   fullName: string;
   email: string;
   gender: string | null;
@@ -123,6 +124,29 @@ function computeAge(dobStr: string | null | undefined): number | null {
 const demoAccounts: DemoAccount[] = [];
 
 const today = new Date().toISOString().slice(0, 10);
+
+function getActiveEmployee(
+  currentUser: AuthUser | null | undefined,
+  employees: Employee[]
+): Employee | null {
+  if (!currentUser) return null;
+  const match = employees.find(
+    (e) => e.email.toLowerCase() === currentUser.email.toLowerCase()
+  );
+  if (match) return match;
+
+  const uniqueId = currentUser.employeeId || `EMP-${1040 + currentUser.id}`;
+  return {
+    id: uniqueId,
+    name: currentUser.name,
+    email: currentUser.email,
+    phone: '—',
+    department: 'Student Services',
+    designation: currentUser.role === 'HR_ADMIN' ? 'HR Administrator' : 'Employee',
+    joiningDate: today,
+    status: 'Active',
+  };
+}
 const seedEmployees: Employee[] = [
   { id: 'EMP-1042', name: 'Maya Chen', email: 'maya.chen@northstar.edu', phone: '+1 (415) 555-0193', department: 'Student Services', designation: 'Program Coordinator', joiningDate: '2023-08-14', status: 'Active' },
   { id: 'EMP-1037', name: 'Jon Bell', email: 'jon.bell@northstar.edu', phone: '+1 (415) 555-0158', department: 'Admissions', designation: 'Admissions Specialist', joiningDate: '2022-04-11', status: 'Active' },
@@ -1106,21 +1130,303 @@ function ManagerAccessCard() {
   return <div className="rounded-2xl border border-card-border bg-card p-5 shadow-sm"><div className="flex items-start justify-between gap-3"><div><h2 className="font-bold">Manager access</h2><p className="mt-1 text-xs text-muted-foreground">Request access for HR to review.</p></div>{current && <Badge tone={statusTone(current.status === 'APPROVED' ? 'Approved' : current.status === 'PENDING' ? 'Pending' : current.status === 'REJECTED' ? 'Rejected' : 'Inactive')}>{current.status}</Badge>}</div>{current?.reviewReason && <p className="mt-3 text-xs text-muted-foreground">{current.reviewReason}</p>}{(!current || current.status === 'REJECTED' || current.status === 'REVOKED') && <Button testId="button-request-manager-access" className="mt-4" onClick={requestAccess} disabled={busy}>{busy ? 'Submitting…' : 'Request manager access'}</Button>}{message && <p className="mt-3 text-xs font-semibold text-emerald-700">{message}</p>}</div>;
 }
 
-function EmployeeDashboard({ employees, attendance, leaves }: { employees: Employee[]; attendance: Attendance[]; leaves: LeaveRequest[] }) {
-  const employee = employees[0]; const todayRecord = attendance.find((item) => item.employeeId === employee.id && item.workDate === today); const recentLeaves = leaves.filter((item) => item.employeeId === employee.id).slice(0, 3);
-  return <div className="page-enter"><SectionTitle eyebrow={formatDate(today)} title={`Good morning, ${employee.name.split(' ')[0]}.`} detail="Here is your workday at a glance." action={<Badge tone="info"><ShieldCheck size={12} /> Employee view</Badge>} /><div className="grid gap-4 md:grid-cols-3"><div className="rounded-2xl bg-primary p-5 text-primary-foreground shadow-md md:col-span-2"><div className="flex items-start justify-between"><div><p className="text-sm font-medium text-primary-foreground/70">Today’s attendance</p><p className="mt-3 text-4xl font-bold tracking-[-.05em]">{todayRecord?.checkIn || 'Not started'}</p><p className="mt-1 text-sm text-primary-foreground/70">{todayRecord?.checkIn ? 'Check-in recorded · On schedule' : 'Your workday is waiting for you'}</p></div><div className="rounded-xl bg-white/10 p-3"><Clock3 size={23} /></div></div><div className="mt-7 flex flex-wrap items-center gap-3 border-t border-white/15 pt-4 text-sm"><span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-accent" /> {todayRecord?.checkOut ? `Checked out at ${todayRecord.checkOut}` : 'Currently working'}</span><span className="text-primary-foreground/50">•</span><span className="text-primary-foreground/70">Expected: 8 hours</span></div></div><div className="rounded-2xl border border-card-border bg-card p-5 shadow-sm"><p className="text-sm font-medium text-muted-foreground">Leave balance</p><p className="mt-3 text-4xl font-bold tracking-[-.05em]">14 <span className="text-base font-medium text-muted-foreground">days</span></p><div className="mt-5 h-2 overflow-hidden rounded-full bg-muted"><div className="h-full w-[64%] rounded-full bg-accent" /></div><p className="mt-2 text-xs text-muted-foreground">25 days annual allowance</p></div></div><div className="mt-8 grid gap-6 lg:grid-cols-[1.35fr_.85fr]"><div className="rounded-2xl border border-card-border bg-card p-5 shadow-sm"><div className="mb-5 flex items-center justify-between"><div><h2 className="font-bold">Recent leave</h2><p className="mt-1 text-xs text-muted-foreground">Your latest requests and decisions</p></div><Link href="/employee/leave" data-testid="link-view-all-leave" className="text-xs font-semibold text-primary hover:underline">View all</Link></div>{recentLeaves.length ? <div className="divide-y divide-border">{recentLeaves.map((leave) => <div key={leave.id} data-testid={`row-recent-leave-${leave.id}`} className="flex items-center justify-between gap-3 py-3.5"><div className="flex items-center gap-3"><div className="grid h-9 w-9 place-items-center rounded-lg bg-muted text-muted-foreground"><FileText size={16} /></div><div><p className="text-sm font-semibold">{leave.leaveType}</p><p className="mt-0.5 text-xs text-muted-foreground">{formatDate(leave.fromDate)} {leave.fromDate !== leave.toDate && `— ${formatDate(leave.toDate)}`}</p></div></div><Badge tone={statusTone(leave.status)}>{leave.status}</Badge></div>)}</div> : <EmptyState title="No leave requests yet" detail="Your submitted requests will appear here." />}</div><div className="space-y-6"><ManagerAccessCard /><div className="rounded-2xl border border-card-border bg-card p-5 shadow-sm"><div className="flex items-center gap-2"><div className="rounded-lg bg-amber-50 p-2 text-amber-700"><CircleHelp size={17} /></div><h2 className="font-bold">Need a hand?</h2></div><p className="mt-3 text-sm leading-6 text-muted-foreground">Keep your attendance current and submit leave early so your manager has time to review it.</p><Link href="/employee/attendance" data-testid="link-go-attendance" className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-primary">Open attendance <ArrowRight size={15} /></Link></div></div></div></div>;
+function EmployeeDashboard({
+  employees,
+  attendance,
+  leaves,
+  currentUser,
+}: {
+  employees: Employee[];
+  attendance: Attendance[];
+  leaves: LeaveRequest[];
+  currentUser?: AuthUser | null;
+}) {
+  const employee = getActiveEmployee(currentUser, employees);
+  if (!employee) {
+    return (
+      <div className="page-enter p-8 text-center">
+        <EmptyState
+          title="Account not linked"
+          detail="No employee profile was found for your account. Please contact HR administration."
+        />
+      </div>
+    );
+  }
+
+  const todayRecord = attendance.find((item) => item.employeeId === employee.id && item.workDate === today);
+  const recentLeaves = leaves.filter((item) => item.employeeId === employee.id).slice(0, 3);
+  const approvedLeaves = leaves.filter((item) => item.employeeId === employee.id && item.status === 'Approved');
+  const approvedDays = approvedLeaves.reduce((acc, leave) => {
+    try {
+      const from = new Date(leave.fromDate).getTime();
+      const to = new Date(leave.toDate).getTime();
+      const diff = Math.max(1, Math.round((to - from) / (1000 * 60 * 60 * 24)) + 1);
+      return acc + (isNaN(diff) ? 1 : diff);
+    } catch {
+      return acc + 1;
+    }
+  }, 0);
+  const annualAllowance = 25;
+  const leaveBalance = Math.max(0, annualAllowance - approvedDays);
+  const percentAllowance = Math.min(100, Math.round((leaveBalance / annualAllowance) * 100));
+
+  return (
+    <div className="page-enter">
+      <SectionTitle
+        eyebrow={formatDate(today)}
+        title={`Good morning, ${employee.name.split(' ')[0]}.`}
+        detail="Here is your workday at a glance."
+        action={
+          <Badge tone="info">
+            <ShieldCheck size={12} /> Employee view ({employee.id})
+          </Badge>
+        }
+      />
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-2xl bg-primary p-5 text-primary-foreground shadow-md md:col-span-2">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-medium text-primary-foreground/70">Today’s attendance</p>
+              <p className="mt-3 text-4xl font-bold tracking-[-.05em]">{todayRecord?.checkIn || 'Not started'}</p>
+              <p className="mt-1 text-sm text-primary-foreground/70">
+                {todayRecord?.checkIn ? 'Check-in recorded · On schedule' : 'Your workday is waiting for you'}
+              </p>
+            </div>
+            <div className="rounded-xl bg-white/10 p-3"><Clock3 size={23} /></div>
+          </div>
+          <div className="mt-7 flex flex-wrap items-center gap-3 border-t border-white/15 pt-4 text-sm">
+            <span className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-accent" />
+              {todayRecord?.checkOut ? `Checked out at ${todayRecord.checkOut}` : todayRecord?.checkIn ? 'Currently working' : 'Not checked in'}
+            </span>
+            <span className="text-primary-foreground/50">•</span>
+            <span className="text-primary-foreground/70">Expected: 8 hours</span>
+          </div>
+        </div>
+        <div className="rounded-2xl border border-card-border bg-card p-5 shadow-sm">
+          <p className="text-sm font-medium text-muted-foreground">Leave balance</p>
+          <p className="mt-3 text-4xl font-bold tracking-[-.05em]">
+            {leaveBalance} <span className="text-base font-medium text-muted-foreground">days</span>
+          </p>
+          <div className="mt-5 h-2 overflow-hidden rounded-full bg-muted">
+            <div className="h-full rounded-full bg-accent" style={{ width: `${percentAllowance}%` }} />
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">{annualAllowance} days annual allowance</p>
+        </div>
+      </div>
+      <div className="mt-8 grid gap-6 lg:grid-cols-[1.35fr_.85fr]">
+        <div className="rounded-2xl border border-card-border bg-card p-5 shadow-sm">
+          <div className="mb-5 flex items-center justify-between">
+            <div>
+              <h2 className="font-bold">Recent leave</h2>
+              <p className="mt-1 text-xs text-muted-foreground">Your latest requests and decisions</p>
+            </div>
+            <Link href="/employee/leave" data-testid="link-view-all-leave" className="text-xs font-semibold text-primary hover:underline">
+              View all
+            </Link>
+          </div>
+          {recentLeaves.length ? (
+            <div className="divide-y divide-border">
+              {recentLeaves.map((leave) => (
+                <div key={leave.id} data-testid={`row-recent-leave-${leave.id}`} className="flex items-center justify-between gap-3 py-3.5">
+                  <div className="flex items-center gap-3">
+                    <div className="grid h-9 w-9 place-items-center rounded-lg bg-muted text-muted-foreground">
+                      <FileText size={16} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold">{leave.leaveType}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {formatDate(leave.fromDate)} {leave.fromDate !== leave.toDate && `— ${formatDate(leave.toDate)}`}
+                      </p>
+                    </div>
+                  </div>
+                  <Badge tone={statusTone(leave.status)}>{leave.status}</Badge>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState title="No leave requests yet" detail="Your submitted requests will appear here." />
+          )}
+        </div>
+        <div className="space-y-6">
+          <ManagerAccessCard />
+          <div className="rounded-2xl border border-card-border bg-card p-5 shadow-sm">
+            <div className="flex items-center gap-2">
+              <div className="rounded-lg bg-amber-50 p-2 text-amber-700"><CircleHelp size={17} /></div>
+              <h2 className="font-bold">Need a hand?</h2>
+            </div>
+            <p className="mt-3 text-sm leading-6 text-muted-foreground">
+              Keep your attendance current and submit leave early so your manager has time to review it.
+            </p>
+            <Link href="/employee/attendance" data-testid="link-go-attendance" className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-primary">
+              Open attendance <ArrowRight size={15} />
+            </Link>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function EmptyState({ title, detail }: { title: string; detail: string }) { return <div className="rounded-xl border border-dashed border-border py-10 text-center"><div className="mx-auto grid h-10 w-10 place-items-center rounded-xl bg-muted text-muted-foreground"><FileText size={18} /></div><p className="mt-3 text-sm font-semibold">{title}</p><p className="mt-1 text-xs text-muted-foreground">{detail}</p></div>; }
 
-function EmployeeAttendance({ attendance, setAttendance }: { attendance: Attendance[]; setAttendance: (value: Attendance[] | ((prev: Attendance[]) => Attendance[])) => void }) {
-  const me = 'EMP-1042'; const todayRecord = attendance.find((item) => item.employeeId === me && item.workDate === today); const [notice, setNotice] = useState('');
-  const checkIn = () => { if (todayRecord?.checkIn) return; setAttendance((prev) => [{ employeeId: me, workDate: today, checkIn: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }), checkOut: '', status: 'Present', workingHours: '—' }, ...prev]); setNotice('Check-in saved locally.'); };
-  const checkOut = () => { if (!todayRecord?.checkIn || todayRecord.checkOut) return; const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }); setAttendance((prev) => prev.map((item) => item.employeeId === me && item.workDate === today ? { ...item, checkOut: time, workingHours: '8h 00m' } : item)); setNotice('Check-out saved locally.'); };
-  return <div className="page-enter"><SectionTitle eyebrow="My workspace" title="Attendance" detail="Record your workday and review your attendance history." action={<Badge tone="info"><CalendarCheck2 size={12} /> {formatDate(today)}</Badge>} /><div className="grid gap-5 lg:grid-cols-[.8fr_1.2fr]"><div className="rounded-2xl border border-card-border bg-card p-6 shadow-sm"><div className="flex items-center justify-between"><div><p className="text-sm font-medium text-muted-foreground">Today</p><h2 className="mt-1 text-2xl font-bold">{todayRecord?.checkIn ? 'Workday in progress' : 'Ready to begin?'}</h2></div><div className="grid h-11 w-11 place-items-center rounded-xl bg-primary/10 text-primary"><Clock3 size={22} /></div></div><div className="my-7 grid grid-cols-2 gap-3"><div className="rounded-xl bg-muted/70 p-4"><p className="text-xs text-muted-foreground">Check in</p><p className="mono mt-2 text-lg font-bold">{todayRecord?.checkIn || '—'}</p></div><div className="rounded-xl bg-muted/70 p-4"><p className="text-xs text-muted-foreground">Check out</p><p className="mono mt-2 text-lg font-bold">{todayRecord?.checkOut || '—'}</p></div></div><div className="flex gap-2"><Button testId="button-check-in" onClick={checkIn} disabled={Boolean(todayRecord?.checkIn)}><Check size={16} /> Check in</Button><Button testId="button-check-out" variant="secondary" onClick={checkOut} disabled={!todayRecord?.checkIn || Boolean(todayRecord?.checkOut)}>Check out</Button></div>{notice && <p className="mt-4 flex items-center gap-2 text-xs font-semibold text-emerald-700"><CheckCircle2 size={15} /> {notice}</p>}</div><div className="rounded-2xl border border-card-border bg-card p-6 shadow-sm"><div className="mb-5 flex items-center justify-between"><div><h2 className="font-bold">Attendance history</h2><p className="mt-1 text-xs text-muted-foreground">Your most recent workdays</p></div><Button testId="button-attendance-filter" variant="ghost" className="px-2"><Filter size={16} /> Filter</Button></div><div className="overflow-x-auto"><table className="w-full min-w-[540px] text-left text-sm"><thead><tr className="border-b border-border text-xs text-muted-foreground"><th className="pb-3 font-medium">Date</th><th className="pb-3 font-medium">Check in</th><th className="pb-3 font-medium">Check out</th><th className="pb-3 font-medium">Hours</th><th className="pb-3 font-medium">Status</th></tr></thead><tbody className="divide-y divide-border">{attendance.filter((item) => item.employeeId === me).slice(0, 8).map((item) => <tr key={item.workDate} data-testid={`row-attendance-${item.workDate}`}><td className="py-3.5 font-medium">{formatDate(item.workDate)}</td><td className="mono py-3.5 text-xs">{item.checkIn || '—'}</td><td className="mono py-3.5 text-xs">{item.checkOut || '—'}</td><td className="py-3.5 text-muted-foreground">{item.workingHours}</td><td className="py-3.5"><Badge tone={statusTone(item.status)}>{item.status}</Badge></td></tr>)}</tbody></table></div></div></div></div>;
+function EmployeeAttendance({
+  attendance,
+  setAttendance,
+  currentUser,
+  employees,
+}: {
+  attendance: Attendance[];
+  setAttendance: (value: Attendance[] | ((prev: Attendance[]) => Attendance[])) => void;
+  currentUser?: AuthUser | null;
+  employees: Employee[];
+}) {
+  const currentEmployee = getActiveEmployee(currentUser, employees);
+  const me = currentEmployee?.id || '';
+  const todayRecord = attendance.find((item) => item.employeeId === me && item.workDate === today);
+  const [notice, setNotice] = useState('');
+  const checkIn = () => {
+    if (!me || todayRecord?.checkIn) return;
+    setAttendance((prev) => [
+      {
+        employeeId: me,
+        workDate: today,
+        checkIn: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
+        checkOut: '',
+        status: 'Present',
+        workingHours: '—',
+      },
+      ...prev,
+    ]);
+    setNotice('Check-in saved locally.');
+  };
+  const checkOut = () => {
+    if (!me || !todayRecord?.checkIn || todayRecord.checkOut) return;
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    setAttendance((prev) =>
+      prev.map((item) =>
+        item.employeeId === me && item.workDate === today
+          ? { ...item, checkOut: time, workingHours: '8h 00m' }
+          : item
+      )
+    );
+    setNotice('Check-out saved locally.');
+  };
+  const myHistory = me ? attendance.filter((item) => item.employeeId === me).slice(0, 8) : [];
+  return (
+    <div className="page-enter">
+      <SectionTitle
+        eyebrow="My workspace"
+        title="Attendance"
+        detail="Record your workday and review your attendance history."
+        action={
+          <Badge tone="info">
+            <CalendarCheck2 size={12} /> {formatDate(today)}
+          </Badge>
+        }
+      />
+      <div className="grid gap-5 lg:grid-cols-[.8fr_1.2fr]">
+        <div className="rounded-2xl border border-card-border bg-card p-6 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">Today</p>
+              <h2 className="mt-1 text-2xl font-bold">{todayRecord?.checkIn ? 'Workday in progress' : 'Ready to begin?'}</h2>
+            </div>
+            <div className="grid h-11 w-11 place-items-center rounded-xl bg-primary/10 text-primary">
+              <Clock3 size={22} />
+            </div>
+          </div>
+          <div className="my-7 grid grid-cols-2 gap-3">
+            <div className="rounded-xl bg-muted/70 p-4">
+              <p className="text-xs text-muted-foreground">Check in</p>
+              <p className="mono mt-2 text-lg font-bold">{todayRecord?.checkIn || '—'}</p>
+            </div>
+            <div className="rounded-xl bg-muted/70 p-4">
+              <p className="text-xs text-muted-foreground">Check out</p>
+              <p className="mono mt-2 text-lg font-bold">{todayRecord?.checkOut || '—'}</p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button testId="button-check-in" onClick={checkIn} disabled={!me || Boolean(todayRecord?.checkIn)}>
+              <Check size={16} /> Check in
+            </Button>
+            <Button
+              testId="button-check-out"
+              variant="secondary"
+              onClick={checkOut}
+              disabled={!me || !todayRecord?.checkIn || Boolean(todayRecord?.checkOut)}
+            >
+              Check out
+            </Button>
+          </div>
+          {notice && (
+            <p className="mt-4 flex items-center gap-2 text-xs font-semibold text-emerald-700">
+              <CheckCircle2 size={15} /> {notice}
+            </p>
+          )}
+        </div>
+        <div className="rounded-2xl border border-card-border bg-card p-6 shadow-sm">
+          <div className="mb-5 flex items-center justify-between">
+            <div>
+              <h2 className="font-bold">Attendance history</h2>
+              <p className="mt-1 text-xs text-muted-foreground">Your most recent workdays</p>
+            </div>
+            <Button testId="button-attendance-filter" variant="ghost" className="px-2">
+              <Filter size={16} /> Filter
+            </Button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[540px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-border text-xs text-muted-foreground">
+                  <th className="pb-3 font-medium">Date</th>
+                  <th className="pb-3 font-medium">Check in</th>
+                  <th className="pb-3 font-medium">Check out</th>
+                  <th className="pb-3 font-medium">Hours</th>
+                  <th className="pb-3 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {myHistory.length > 0 ? (
+                  myHistory.map((item) => (
+                    <tr key={item.workDate} data-testid={`row-attendance-${item.workDate}`}>
+                      <td className="py-3.5 font-medium">{formatDate(item.workDate)}</td>
+                      <td className="mono py-3.5 text-xs">{item.checkIn || '—'}</td>
+                      <td className="mono py-3.5 text-xs">{item.checkOut || '—'}</td>
+                      <td className="py-3.5 text-muted-foreground">{item.workingHours}</td>
+                      <td className="py-3.5">
+                        <Badge tone={statusTone(item.status)}>{item.status}</Badge>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={5} className="py-8 text-center text-xs text-muted-foreground">
+                      No attendance records found yet. Click &quot;Check in&quot; to begin your workday.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
-function EmployeeLeave({ leaves, setLeaves }: { leaves: LeaveRequest[]; setLeaves: (value: LeaveRequest[] | ((prev: LeaveRequest[]) => LeaveRequest[])) => void }) {
+function EmployeeLeave({
+  leaves,
+  setLeaves,
+  currentUser,
+  employees,
+}: {
+  leaves: LeaveRequest[];
+  setLeaves: (value: LeaveRequest[] | ((prev: LeaveRequest[]) => LeaveRequest[])) => void;
+  currentUser?: AuthUser | null;
+  employees: Employee[];
+}) {
+  const currentEmployee = getActiveEmployee(currentUser, employees);
   const [form, setForm] = useState({ leaveType: 'Sick leave', fromDate: '', toDate: '', reason: '' });
   const [attachments, setAttachments] = useState<LeaveAttachment[]>([]);
   const [notice, setNotice] = useState('');
@@ -1154,11 +1460,11 @@ function EmployeeLeave({ leaves, setLeaves }: { leaves: LeaveRequest[]; setLeave
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (!form.fromDate || !form.toDate || !form.reason) return;
+    if (!form.fromDate || !form.toDate || !form.reason || !currentEmployee) return;
     const item: LeaveRequest = {
       id: `LV-${Math.floor(2209 + Math.random() * 90)}`,
-      employeeId: 'EMP-1042',
-      employeeName: 'Maya Chen',
+      employeeId: currentEmployee.id,
+      employeeName: currentEmployee.name,
       ...form,
       status: 'Pending',
       appliedDate: today,
@@ -1177,7 +1483,7 @@ function EmployeeLeave({ leaves, setLeaves }: { leaves: LeaveRequest[]; setLeave
     window.setTimeout(() => setNotice(''), 5000);
   };
 
-  const mine = leaves.filter((item) => item.employeeId === 'EMP-1042');
+  const mine = currentEmployee ? leaves.filter((item) => item.employeeId === currentEmployee.id) : [];
 
   return (
     <div className="page-enter">
@@ -1475,7 +1781,7 @@ function EmployeeLeave({ leaves, setLeaves }: { leaves: LeaveRequest[]; setLeave
 }
 
 function EmployeeProfile({ role, employees, setEmployees, currentUser }: { role?: Role; employees: Employee[]; setEmployees?: (value: Employee[] | ((prev: Employee[]) => Employee[])) => void; currentUser?: AuthUser | null }) {
-  const fallbackEmployee = employees[0];
+  const currentEmployee = getActiveEmployee(currentUser, employees);
   const [details, setDetails] = useState<PersonalDetails | null>(null);
   const [corrections, setCorrections] = useState<CorrectionRequest[]>([]);
   const [error, setError] = useState('');
@@ -1488,8 +1794,8 @@ function EmployeeProfile({ role, employees, setEmployees, currentUser }: { role?
   const isHr = role === 'hr' || currentUser?.role === 'HR_ADMIN' || details?.role === 'HR_ADMIN';
   const isManager = role === 'manager' || details?.role === 'MANAGER';
   const roleDisplay = isHr ? 'HR Administrator' : isManager ? 'Manager' : 'Active Employee';
-  const fallbackName = isHr ? 'Avery Morgan' : isManager ? 'Jordan Reed' : fallbackEmployee.name;
-  const userIdentifier = currentUser?.email || details?.email || fallbackEmployee.email;
+  const fallbackName = isHr ? 'Avery Morgan' : isManager ? 'Jordan Reed' : (currentEmployee?.name || currentUser?.name || 'Employee');
+  const userIdentifier = currentUser?.email || details?.email || currentEmployee?.email || 'employee@northstar.edu';
 
   const [profileData, setProfileData] = useState<UserProfileData>(() => loadUserProfile(userIdentifier));
   const [isEditing, setIsEditing] = useState(false);
@@ -1519,14 +1825,15 @@ function EmployeeProfile({ role, employees, setEmployees, currentUser }: { role?
       setDetails(data);
     } catch {
       setDetails({
-        id: 1,
-        fullName: currentUser?.name || fallbackName,
-        email: currentUser?.email || fallbackEmployee.email,
+        id: currentUser?.id || 1,
+        employeeId: currentUser?.employeeId || currentEmployee?.id || null,
+        fullName: currentUser?.name || currentEmployee?.name || fallbackName,
+        email: currentUser?.email || currentEmployee?.email || userIdentifier,
         gender: null,
         dateOfBirth: null,
         age: null,
         residentialAddress: null,
-        mobileNumber: fallbackEmployee.phone !== '—' ? fallbackEmployee.phone : null,
+        mobileNumber: currentEmployee?.phone && currentEmployee.phone !== '—' ? currentEmployee.phone : null,
         role: isHr ? 'HR_ADMIN' : isManager ? 'MANAGER' : 'EMPLOYEE',
         status: 'ACTIVE',
       });
@@ -1556,7 +1863,7 @@ function EmployeeProfile({ role, employees, setEmployees, currentUser }: { role?
       setFormCountry(p.country || 'United States');
       setFormLanguage(p.language || 'English (US)');
       setFormTimeZone(p.timeZone || '(GMT-05:00) Eastern Time (US & Canada)');
-      setFormMobile(p.mobileNumber || details?.mobileNumber || (fallbackEmployee.phone !== '—' ? fallbackEmployee.phone : ''));
+      setFormMobile(p.mobileNumber || details?.mobileNumber || (currentEmployee?.phone && currentEmployee.phone !== '—' ? currentEmployee.phone : ''));
       setFormAddress(p.residentialAddress || details?.residentialAddress || '');
       setFormAbout(p.about || 'Available');
     }
@@ -1590,7 +1897,7 @@ function EmployeeProfile({ role, employees, setEmployees, currentUser }: { role?
     setFormCountry(profileData.country || 'United States');
     setFormLanguage(profileData.language || 'English (US)');
     setFormTimeZone(profileData.timeZone || '(GMT-05:00) Eastern Time (US & Canada)');
-    setFormMobile(profileData.mobileNumber || details?.mobileNumber || (fallbackEmployee.phone !== '—' ? fallbackEmployee.phone : ''));
+    setFormMobile(profileData.mobileNumber || details?.mobileNumber || (currentEmployee?.phone && currentEmployee.phone !== '—' ? currentEmployee.phone : ''));
     setFormAddress(profileData.residentialAddress || details?.residentialAddress || '');
     setFormAbout(profileData.about || 'Available');
     setIsEditing(false);
@@ -2453,7 +2760,43 @@ function HREmployees({ employees, setEmployees }: { employees: Employee[]; setEm
 
   const loadBackendUsers = () => {
     authRequest<BackendUser[]>('/api/hr/users')
-      .then(setBackendUsers)
+      .then((users) => {
+        setBackendUsers(users);
+        setEmployees((prev) => {
+          let updated = [...prev];
+          let changed = false;
+          users.forEach((u) => {
+            if (u.role === 'EMPLOYEE' && u.status === 'ACTIVE') {
+              const idx = updated.findIndex((e) => e.email.toLowerCase() === u.email.toLowerCase());
+              if (idx === -1) {
+                let highest = 1042;
+                updated.forEach((e) => {
+                  if (e.id.startsWith('EMP-')) {
+                    const num = parseInt(e.id.slice(4), 10);
+                    if (!isNaN(num) && num > highest) highest = num;
+                  }
+                });
+                const uniqueId = u.employeeId || `EMP-${highest + 1}`;
+                updated.push({
+                  id: uniqueId,
+                  name: u.name,
+                  email: u.email,
+                  phone: '—',
+                  department: 'Student Services',
+                  designation: 'Employee',
+                  joiningDate: today,
+                  status: 'Active',
+                });
+                changed = true;
+              } else if (u.employeeId && updated[idx].id !== u.employeeId) {
+                updated[idx] = { ...updated[idx], id: u.employeeId };
+                changed = true;
+              }
+            }
+          });
+          return changed ? updated : prev;
+        });
+      })
       .catch(() => setBackendUsers([]));
   };
 
@@ -2565,7 +2908,23 @@ function HREmployees({ employees, setEmployees }: { employees: Employee[]; setEm
 
   const filtered = employees.filter((employee) => (filter === 'All' || employee.status === filter) && `${employee.name} ${employee.department} ${employee.email}`.toLowerCase().includes(query.toLowerCase()));
   const toggle = (id: string) => setEmployees((prev) => prev.map((employee) => employee.id === id ? { ...employee, status: employee.status === 'Active' ? 'Inactive' : 'Active' } : employee));
-  const addEmployee = (event: FormEvent) => { event.preventDefault(); if (!newEmployee.name || !newEmployee.email || !newEmployee.designation) return; setEmployees((prev) => [...prev, { id: `EMP-${1043 + prev.length}`, ...newEmployee, phone: '—', joiningDate: today, status: 'Active' }]); setNewEmployee({ name: '', email: '', department: 'Student Services', designation: '' }); setAddOpen(false); };
+  const addEmployee = (event: FormEvent) => {
+    event.preventDefault();
+    if (!newEmployee.name || !newEmployee.email || !newEmployee.designation) return;
+    setEmployees((prev) => {
+      let highest = 1042;
+      prev.forEach((e) => {
+        if (e.id.startsWith('EMP-')) {
+          const num = parseInt(e.id.slice(4), 10);
+          if (!isNaN(num) && num > highest) highest = num;
+        }
+      });
+      const nextId = `EMP-${highest + 1}`;
+      return [...prev, { id: nextId, ...newEmployee, phone: '—', joiningDate: today, status: 'Active' }];
+    });
+    setNewEmployee({ name: '', email: '', department: 'Student Services', designation: '' });
+    setAddOpen(false);
+  };
 
   const previewAge = computeAge(editForm.dateOfBirth);
 
@@ -3673,7 +4032,11 @@ type RegistrationItem = {
   needsHrReview?: boolean;
 };
 
-function HRRegistrationsPage() {
+function HRRegistrationsPage({
+  setEmployees,
+}: {
+  setEmployees?: (value: Employee[] | ((prev: Employee[]) => Employee[])) => void;
+} = {}) {
   const [registrations, setRegistrations] = useState<RegistrationItem[]>([]);
   const [eligibleManagers, setEligibleManagers] = useState<EligibleManager[]>([]);
   const [correctionRequests, setCorrectionRequests] = useState<CorrectionRequest[]>([]);
@@ -3715,6 +4078,32 @@ function HRRegistrationsPage() {
       await ensureCsrf();
       await authRequest(`/api/hr/employee-registrations/${item.id}/approve`, { method: 'POST', body: '{}' });
       setMessage(`Registration for ${item.name} approved successfully.`);
+      if (setEmployees) {
+        setEmployees((prev) => {
+          if (prev.some((e) => e.email.toLowerCase() === item.email.toLowerCase())) return prev;
+          let highest = 1042;
+          prev.forEach((e) => {
+            if (e.id.startsWith('EMP-')) {
+              const num = parseInt(e.id.slice(4), 10);
+              if (!isNaN(num) && num > highest) highest = num;
+            }
+          });
+          const nextId = `EMP-${highest + 1}`;
+          return [
+            ...prev,
+            {
+              id: nextId,
+              name: item.name,
+              email: item.email,
+              phone: '—',
+              department: 'Student Services',
+              designation: 'Employee',
+              joiningDate: today,
+              status: 'Active',
+            },
+          ];
+        });
+      }
       refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to approve registration.');
@@ -4281,6 +4670,39 @@ function AppContent() {
       active = false;
     };
   }, [setRole]);
+  useEffect(() => {
+    if (authenticated && currentUser && currentUser.role === 'EMPLOYEE') {
+      setEmployees((prev) => {
+        const match = prev.find((e) => e.email.toLowerCase() === currentUser.email.toLowerCase());
+        if (match) {
+          if (currentUser.employeeId && match.id !== currentUser.employeeId) {
+            return prev.map((e) => e.email.toLowerCase() === currentUser.email.toLowerCase() ? { ...e, id: currentUser.employeeId! } : e);
+          }
+          return prev;
+        }
+        let highest = 1042;
+        prev.forEach((e) => {
+          if (e.id.startsWith('EMP-')) {
+            const num = parseInt(e.id.slice(4), 10);
+            if (!isNaN(num) && num > highest) highest = num;
+          }
+        });
+        const newEmpId = currentUser.employeeId || `EMP-${highest + 1}`;
+        const newEmp: Employee = {
+          id: newEmpId,
+          name: currentUser.name,
+          email: currentUser.email,
+          phone: '—',
+          department: 'Student Services',
+          designation: 'Employee',
+          joiningDate: today,
+          status: 'Active',
+        };
+        return [...prev, newEmp];
+      });
+    }
+  }, [authenticated, currentUser, setEmployees]);
+
   const signIn = (user: AuthUser) => {
     setCurrentUser(user);
     setRole(user.role === 'HR_ADMIN' ? 'hr' : user.effectiveRoles?.includes('MANAGER') ? 'manager' : 'employee');
@@ -4332,7 +4754,7 @@ function AppContent() {
     return <Shell role={role} setRole={setRole} onSignOut={signOut} currentUser={currentUser}>{component}</Shell>;
   };
 
-  return <Switch><Route path="/"><BackendSignIn setRole={setRole} onSignIn={signIn} /></Route><Route path="/employee/dashboard">{page(<EmployeeDashboard employees={employees} attendance={attendance} leaves={leaves} />)}</Route><Route path="/employee/attendance">{page(<EmployeeAttendance attendance={attendance} setAttendance={setAttendance} />)}</Route><Route path="/employee/leave">{page(<EmployeeLeave leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/employee/profile">{page(<EmployeeProfile role={role} employees={employees} setEmployees={setEmployees} currentUser={currentUser} />)}</Route><Route path="/manager/dashboard">{page(<ManagerDashboard leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/manager/leave-review">{page(<ManagerLeaveReview leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/hr/dashboard">{hrPage(<HRDashboard employees={employees} attendance={attendance} leaves={leaves} />)}</Route><Route path="/hr/registrations">{hrPage(<HRRegistrationsPage />)}</Route><Route path="/hr/employees">{hrPage(<HREmployees employees={employees} setEmployees={setEmployees} />)}</Route><Route path="/hr/access">{hrPage(<HRAccessPage />)}</Route><Route path="/hr/leave-requests">{hrPage(<HRLeaveRequests leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/hr/attendance">{hrPage(<HRAttendance attendance={attendance} employees={employees} />)}</Route><Route path="/hr/reports">{hrPage(<HRReports attendance={attendance} leaves={leaves} />)}</Route><Route path="/settings">{page(<SettingsPage role={role} />)}</Route><Route><BackendSignIn setRole={setRole} onSignIn={signIn} /></Route></Switch>;
+  return <Switch><Route path="/"><BackendSignIn setRole={setRole} onSignIn={signIn} /></Route><Route path="/employee/dashboard">{page(<EmployeeDashboard employees={employees} attendance={attendance} leaves={leaves} currentUser={currentUser} />)}</Route><Route path="/employee/attendance">{page(<EmployeeAttendance attendance={attendance} setAttendance={setAttendance} currentUser={currentUser} employees={employees} />)}</Route><Route path="/employee/leave">{page(<EmployeeLeave leaves={leaves} setLeaves={setLeaves} currentUser={currentUser} employees={employees} />)}</Route><Route path="/employee/profile">{page(<EmployeeProfile role={role} employees={employees} setEmployees={setEmployees} currentUser={currentUser} />)}</Route><Route path="/manager/dashboard">{page(<ManagerDashboard leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/manager/leave-review">{page(<ManagerLeaveReview leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/hr/dashboard">{hrPage(<HRDashboard employees={employees} attendance={attendance} leaves={leaves} />)}</Route><Route path="/hr/registrations">{hrPage(<HRRegistrationsPage setEmployees={setEmployees} />)}</Route><Route path="/hr/employees">{hrPage(<HREmployees employees={employees} setEmployees={setEmployees} />)}</Route><Route path="/hr/access">{hrPage(<HRAccessPage />)}</Route><Route path="/hr/leave-requests">{hrPage(<HRLeaveRequests leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/hr/attendance">{hrPage(<HRAttendance attendance={attendance} employees={employees} />)}</Route><Route path="/hr/reports">{hrPage(<HRReports attendance={attendance} leaves={leaves} />)}</Route><Route path="/settings">{page(<SettingsPage role={role} />)}</Route><Route><BackendSignIn setRole={setRole} onSignIn={signIn} /></Route></Switch>;
 }
 function Router() { return <ErrorBoundary resetKey={window.location.pathname}><AppContent /></ErrorBoundary>; }
 function App() { return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><Router /></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>; }
