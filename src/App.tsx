@@ -1150,18 +1150,68 @@ function BackendSignIn({ setRole, onSignIn }: { setRole: (role: Role) => void; o
 
 function ManagerAccessCard() {
   const [requests, setRequests] = useState<Array<{ id: number; status: string; reviewReason?: string }>>([]);
+  const [reason, setReason] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const refresh = () => authRequest<typeof requests>('/api/manager-access/me').then(setRequests).catch(() => undefined);
   useEffect(() => { refresh(); }, []);
   const requestAccess = async () => {
     setBusy(true); setMessage('');
-    try { await ensureCsrf(); await authRequest('/api/manager-access/requests', { method: 'POST', body: '{}' }); setMessage('Manager-access request submitted for HR review.'); await refresh(); }
-    catch (error) { setMessage(error instanceof Error ? error.message : 'Unable to submit request.'); }
-    finally { setBusy(false); }
+    try {
+      await ensureCsrf();
+      await authRequest('/api/manager-access/requests', {
+        method: 'POST',
+        body: JSON.stringify({ reason: reason.trim() || undefined })
+      });
+      setMessage('Manager-access request submitted for HR review.');
+      setReason('');
+      await refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Unable to submit request.');
+    } finally {
+      setBusy(false);
+    }
   };
   const current = requests[0];
-  return <div className="rounded-2xl border border-card-border bg-card p-5 shadow-sm"><div className="flex items-start justify-between gap-3"><div><h2 className="font-bold">Manager access</h2><p className="mt-1 text-xs text-muted-foreground">Request access for HR to review.</p></div>{current && <Badge tone={statusTone(current.status === 'APPROVED' ? 'Approved' : current.status === 'PENDING' ? 'Pending' : current.status === 'REJECTED' ? 'Rejected' : 'Inactive')}>{current.status}</Badge>}</div>{current?.reviewReason && <p className="mt-3 text-xs text-muted-foreground">{current.reviewReason}</p>}{(!current || current.status === 'REJECTED' || current.status === 'REVOKED') && <Button testId="button-request-manager-access" className="mt-4" onClick={requestAccess} disabled={busy}>{busy ? 'Submitting…' : 'Request manager access'}</Button>}{message && <p className="mt-3 text-xs font-semibold text-emerald-700">{message}</p>}</div>;
+  return (
+    <div className="rounded-2xl border border-card-border bg-card p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="font-bold">Manager access</h2>
+          <p className="mt-1 text-xs text-muted-foreground">Request access for HR to review.</p>
+        </div>
+        {current && (
+          <Badge tone={statusTone(current.status === 'APPROVED' ? 'Approved' : current.status === 'PENDING' ? 'Pending' : current.status === 'REJECTED' ? 'Rejected' : 'Inactive')}>
+            {current.status}
+          </Badge>
+        )}
+      </div>
+      {current?.reviewReason && (
+        <p className="mt-3 text-xs text-muted-foreground">
+          <strong className="text-foreground">Review note:</strong> {current.reviewReason}
+        </p>
+      )}
+      {(!current || current.status === 'REJECTED' || current.status === 'REVOKED') && (
+        <div className="mt-4 space-y-3">
+          <label className="block text-xs font-medium text-muted-foreground">
+            Reason / Purpose for requesting manager access (optional)
+            <textarea
+              data-testid="input-manager-request-reason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="e.g., Coordinating department workflows and supervising team attendance..."
+              rows={2}
+              className="mt-1.5 w-full rounded-lg border border-input bg-background p-2.5 text-xs outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+            />
+          </label>
+          <Button testId="button-request-manager-access" onClick={requestAccess} disabled={busy}>
+            {busy ? 'Submitting…' : 'Request manager access'}
+          </Button>
+        </div>
+      )}
+      {message && <p className="mt-3 text-xs font-semibold text-emerald-700">{message}</p>}
+    </div>
+  );
 }
 
 function EmployeeDashboard({
@@ -1964,6 +2014,9 @@ function EmployeeProfile({ role, employees, setEmployees, currentUser }: { role?
   };
 
   const handleRemoveSecondaryEmail = (emailToRemove: string) => {
+    if (!window.confirm(`Are you sure you want to remove the email address "${emailToRemove}"?`)) {
+      return;
+    }
     const updatedEmails = (profileData.secondaryEmails || []).filter((item) => item.email !== emailToRemove);
     const updated: UserProfileData = {
       ...profileData,
@@ -1971,7 +2024,7 @@ function EmployeeProfile({ role, employees, setEmployees, currentUser }: { role?
     };
     setProfileData(updated);
     saveUserProfile(userIdentifier, updated);
-    setSuccessMessage('Email address removed.');
+    setSuccessMessage(`Email address ${emailToRemove} removed.`);
     window.setTimeout(() => setSuccessMessage(''), 4000);
   };
 
@@ -2404,16 +2457,16 @@ function EmployeeProfile({ role, employees, setEmployees, currentUser }: { role?
                     <p className="text-xs text-muted-foreground mt-0.5">Added {item.addedAt || 'recently'}</p>
                   </div>
                 </div>
-                {isEditing && (
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveSecondaryEmail(item.email)}
-                    className="text-xs font-semibold text-rose-500 hover:text-rose-700 p-1.5 transition-colors cursor-pointer"
-                    title="Remove email"
-                  >
-                    Remove
-                  </button>
-                )}
+                <button
+                  type="button"
+                  data-testid={`button-remove-email-${item.email}`}
+                  onClick={() => handleRemoveSecondaryEmail(item.email)}
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/30 px-2 py-1 rounded-lg transition-colors cursor-pointer"
+                  title={`Remove ${item.email}`}
+                >
+                  <Trash2 size={13} />
+                  <span>Remove</span>
+                </button>
               </div>
             ))}
 
@@ -2800,32 +2853,37 @@ function HREmployees({ employees, setEmployees }: { employees: Employee[]; setEm
           let updated = [...prev];
           let changed = false;
           users.forEach((u) => {
-            if (u.role === 'EMPLOYEE' && u.status === 'ACTIVE') {
-              const idx = updated.findIndex((e) => e.email.toLowerCase() === u.email.toLowerCase());
-              if (idx === -1) {
-                let highest = 1042;
-                updated.forEach((e) => {
-                  if (e.id.startsWith('EMP-')) {
-                    const num = parseInt(e.id.slice(4), 10);
-                    if (!isNaN(num) && num > highest) highest = num;
-                  }
-                });
-                const uniqueId = u.employeeId || `EMP-${highest + 1}`;
-                updated.push({
-                  id: uniqueId,
-                  name: u.name,
-                  email: u.email,
-                  phone: '—',
-                  department: 'Student Services',
-                  designation: 'Employee',
-                  joiningDate: today,
-                  status: 'Active',
-                });
+            const idx = updated.findIndex((e) => e.email.toLowerCase() === u.email.toLowerCase());
+            const expectedStatus = u.status === 'ACTIVE' ? 'Active' : 'Inactive';
+            if (idx !== -1) {
+              if (updated[idx].status !== expectedStatus) {
+                updated[idx] = { ...updated[idx], status: expectedStatus };
                 changed = true;
-              } else if (u.employeeId && updated[idx].id !== u.employeeId) {
+              }
+              if (u.employeeId && updated[idx].id !== u.employeeId) {
                 updated[idx] = { ...updated[idx], id: u.employeeId };
                 changed = true;
               }
+            } else if (u.role === 'EMPLOYEE') {
+              let highest = 1042;
+              updated.forEach((e) => {
+                if (e.id.startsWith('EMP-')) {
+                  const num = parseInt(e.id.slice(4), 10);
+                  if (!isNaN(num) && num > highest) highest = num;
+                }
+              });
+              const uniqueId = u.employeeId || `EMP-${highest + 1}`;
+              updated.push({
+                id: uniqueId,
+                name: u.name,
+                email: u.email,
+                phone: '—',
+                department: 'Student Services',
+                designation: 'Employee',
+                joiningDate: today,
+                status: expectedStatus,
+              });
+              changed = true;
             }
           });
           return changed ? updated : prev;
@@ -2941,7 +2999,34 @@ function HREmployees({ employees, setEmployees }: { employees: Employee[]; setEm
   };
 
   const filtered = employees.filter((employee) => (filter === 'All' || employee.status === filter) && `${employee.name} ${employee.department} ${employee.email}`.toLowerCase().includes(query.toLowerCase()));
-  const toggle = (id: string) => setEmployees((prev) => prev.map((employee) => employee.id === id ? { ...employee, status: employee.status === 'Active' ? 'Inactive' : 'Active' } : employee));
+  const toggle = async (id: string) => {
+    const emp = employees.find((e) => e.id === id);
+    if (!emp) return;
+    const isDeactivating = emp.status === 'Active';
+    const actionLabel = isDeactivating ? 'deactivate' : 'activate';
+    if (isDeactivating && !window.confirm(`Are you sure you want to deactivate ${emp.name}? Their login access will be removed while preserving all historical records.`)) {
+      return;
+    }
+    const match = backendUsers.find((u) => u.email.toLowerCase() === emp.email.toLowerCase());
+    if (match) {
+      try {
+        await ensureCsrf();
+        await authRequest(`/api/hr/employees/${match.id}/${actionLabel}`, { method: 'POST', body: '{}' });
+        setDetailsMessage(`Employee ${emp.name} has been ${actionLabel}d successfully.`);
+        window.setTimeout(() => setDetailsMessage(''), 4000);
+      } catch (err) {
+        setDetailsError(err instanceof Error ? err.message : `Unable to ${actionLabel} employee.`);
+        window.setTimeout(() => setDetailsError(''), 4000);
+        return;
+      }
+    }
+    setEmployees((prev) =>
+      prev.map((employee) =>
+        employee.id === id ? { ...employee, status: isDeactivating ? 'Inactive' : 'Active' } : employee
+      )
+    );
+    loadBackendUsers();
+  };
   const addEmployee = (event: FormEvent) => {
     event.preventDefault();
     if (!newEmployee.name || !newEmployee.email || !newEmployee.designation) return;
@@ -2974,6 +3059,17 @@ function HREmployees({ employees, setEmployees }: { employees: Employee[]; setEm
           </Button>
         }
       />
+
+      {!editModalOpen && detailsMessage && (
+        <p role="alert" className="mb-4 rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-xs font-semibold text-emerald-700">
+          {detailsMessage}
+        </p>
+      )}
+      {!editModalOpen && detailsError && (
+        <p role="alert" className="mb-4 rounded-lg bg-rose-50 border border-rose-200 p-3 text-xs font-semibold text-rose-700">
+          {detailsError}
+        </p>
+      )}
 
       {editModalOpen && selectedUser && (
         <div className="mb-6 rounded-2xl border border-primary/30 bg-card p-6 shadow-md">
@@ -3473,10 +3569,30 @@ function HRReports({ attendance, leaves }: { attendance: Attendance[]; leaves: L
 }
 
 function SettingsPage({ role }: { role: Role }) {
-  const [theme, setTheme] = useState(() => localStorage.getItem('meridian-theme') || 'light'); const [notice, setNotice] = useState('');
+  const [theme, setTheme] = useState(() => localStorage.getItem('meridian-theme') || 'light');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
   useEffect(() => { document.documentElement.classList.toggle('dark', theme === 'dark'); localStorage.setItem('meridian-theme', theme); }, [theme]);
   const reset = () => { ['meridian-role', 'meridian-authenticated', 'meridian-employees', 'meridian-attendance', 'meridian-leaves', 'meridian-theme'].forEach((key) => localStorage.removeItem(key)); window.location.reload(); };
-  return <div className="page-enter"><SectionTitle eyebrow="Account" title="Settings" detail="Your access level is managed by the server-side account." /><div className="max-w-3xl space-y-5"><div className="rounded-2xl border border-card-border bg-card p-6 shadow-sm"><div className="flex items-start gap-4"><div className="rounded-lg bg-primary/10 p-2 text-primary"><UserCog size={18} /></div><div><h2 className="font-bold">Current access</h2><p className="mt-1 text-sm text-muted-foreground">{role === 'hr' ? 'HR administrator' : role === 'manager' ? 'Manager access' : 'Employee access'} is enforced by the authenticated backend session.</p><p className="mt-3 text-xs font-semibold text-emerald-700">Role changes require an authorized server-side workflow.</p></div></div></div><div className="rounded-2xl border border-card-border bg-card p-6 shadow-sm"><div className="flex items-center justify-between gap-4"><div><h2 className="font-bold">Appearance</h2><p className="mt-1 text-sm text-muted-foreground">Choose the visual theme for this browser.</p></div><select data-testid="select-theme" value={theme} onChange={(e) => setTheme(e.target.value)} className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary"><option value="light">Light</option><option value="dark">Dark</option></select></div></div><div className="rounded-2xl border border-rose-200 bg-rose-50/60 p-6"><h2 className="font-bold text-rose-900">Reset local demo</h2><p className="mt-1 text-sm leading-6 text-rose-800/70">Restore seeded employees, attendance, leave records, and light theme. This cannot be undone.</p><Button testId="button-reset-demo" variant="danger" className="mt-4" onClick={reset}>Reset demo data</Button></div></div></div>;
+
+  const handleDeleteAccount = async () => {
+    if (!window.confirm('Are you sure you want to delete your account? You will be signed out and will no longer be able to log in. Your historical workday records will be preserved for HR compliance.')) {
+      return;
+    }
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      await ensureCsrf();
+      await authRequest('/api/employee/account/delete', { method: 'POST', body: '{}' });
+      ['meridian-role', 'meridian-authenticated'].forEach((key) => localStorage.removeItem(key));
+      window.location.href = '/';
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Unable to delete account.');
+      setDeleting(false);
+    }
+  };
+
+  return <div className="page-enter"><SectionTitle eyebrow="Account" title="Settings" detail="Your access level is managed by the server-side account." /><div className="max-w-3xl space-y-5"><div className="rounded-2xl border border-card-border bg-card p-6 shadow-sm"><div className="flex items-start gap-4"><div className="rounded-lg bg-primary/10 p-2 text-primary"><UserCog size={18} /></div><div><h2 className="font-bold">Current access</h2><p className="mt-1 text-sm text-muted-foreground">{role === 'hr' ? 'HR administrator' : role === 'manager' ? 'Manager access' : 'Employee access'} is enforced by the authenticated backend session.</p><p className="mt-3 text-xs font-semibold text-emerald-700">Role changes require an authorized server-side workflow.</p></div></div></div><div className="rounded-2xl border border-card-border bg-card p-6 shadow-sm"><div className="flex items-center justify-between gap-4"><div><h2 className="font-bold">Appearance</h2><p className="mt-1 text-sm text-muted-foreground">Choose the visual theme for this browser.</p></div><select data-testid="select-theme" value={theme} onChange={(e) => setTheme(e.target.value)} className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary"><option value="light">Light</option><option value="dark">Dark</option></select></div></div>{role === 'employee' && <div className="rounded-2xl border border-rose-200 bg-rose-50/60 p-6"><h2 className="font-bold text-rose-900">Delete account</h2><p className="mt-1 text-sm leading-6 text-rose-800/70">Deactivate your employee account and revoke active sessions. Your historical workday records will be preserved for HR compliance.</p>{deleteError && <p role="alert" className="mt-3 text-xs font-semibold text-rose-700">{deleteError}</p>}<Button testId="button-delete-account" variant="danger" className="mt-4" disabled={deleting} onClick={handleDeleteAccount}>{deleting ? 'Deleting account…' : 'Delete my account'}</Button></div>}<div className="rounded-2xl border border-rose-200 bg-rose-50/60 p-6"><h2 className="font-bold text-rose-900">Reset local demo</h2><p className="mt-1 text-sm leading-6 text-rose-800/70">Restore seeded employees, attendance, leave records, and light theme. This cannot be undone.</p><Button testId="button-reset-demo" variant="danger" className="mt-4" onClick={reset}>Reset demo data</Button></div></div></div>;
 }
 
 function ManagerDashboard({
@@ -4650,16 +4766,203 @@ function HRRegistrationsPage({
   );
 }
 
+interface ManagerAccessRequestItem {
+  id: number;
+  status: string;
+  submittedAt: string;
+  reviewedAt?: string | null;
+  reviewReason?: string | null;
+  requesterUserId?: number | null;
+  requesterName?: string | null;
+  requesterEmail?: string | null;
+  requesterEmployeeId?: string | null;
+  reviewerHrUserId?: number | null;
+  reviewerName?: string | null;
+  requestType?: string | null;
+  requestedPermissions?: string | null;
+}
+
 function HRAccessPage() {
-  const [requests, setRequests] = useState<Array<{ id: number; status: string; submittedAt: string; reviewReason?: string }>>([]);
+  const [requests, setRequests] = useState<ManagerAccessRequestItem[]>([]);
   const [message, setMessage] = useState('');
-  const refresh = () => authRequest<typeof requests>('/api/hr/manager-access/requests').then(setRequests).catch((error) => setMessage(error instanceof Error ? error.message : 'Unable to load access requests.'));
-  useEffect(() => { refresh(); }, []);
+  const [error, setError] = useState('');
+  const [busyId, setBusyId] = useState<number | null>(null);
+
+  const refresh = () =>
+    authRequest<ManagerAccessRequestItem[]>('/api/hr/manager-access/requests')
+      .then((data) => {
+        setRequests(data);
+        setError('');
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : 'Unable to load access requests.'));
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
   const decide = async (id: number, action: 'approve' | 'reject') => {
-    try { await ensureCsrf(); await authRequest(`/api/hr/manager-access/requests/${id}/${action}`, { method: 'POST', body: action === 'reject' ? JSON.stringify({ reason: 'Reviewed by HR.' }) : '{}' }); setMessage(`Request ${action}d.`); await refresh(); }
-    catch (error) { setMessage(error instanceof Error ? error.message : 'Unable to update request.'); }
+    let reason = 'Reviewed by HR.';
+    if (action === 'reject') {
+      const entered = typeof window.prompt === 'function' ? window.prompt('Enter rejection reason (optional):', 'Application does not meet current criteria.') : null;
+      if (entered === null && typeof window.prompt === 'function') {
+        return;
+      }
+      if (entered && entered.trim()) {
+        reason = entered.trim();
+      }
+    }
+    setBusyId(id);
+    setMessage('');
+    setError('');
+    try {
+      await ensureCsrf();
+      await authRequest(`/api/hr/manager-access/requests/${id}/${action}`, {
+        method: 'POST',
+        body: action === 'reject' ? JSON.stringify({ reason }) : '{}',
+      });
+      setMessage(`Request #${id} ${action}d successfully.`);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to update request.');
+    } finally {
+      setBusyId(null);
+    }
   };
-  return <div className="page-enter"><SectionTitle eyebrow="People operations" title="Access control" detail="Review manager access requests. Permissions and assignments remain separate HR actions." />{message && <p role="alert" className="mb-4 text-sm font-semibold text-emerald-700">{message}</p>}<div className="rounded-2xl border border-card-border bg-card p-5 shadow-sm">{requests.length === 0 ? <EmptyState title="No manager-access requests" detail="Pending and historical requests will appear here." /> : <div className="divide-y divide-border">{requests.map((request) => <div key={request.id} className="flex flex-wrap items-center justify-between gap-3 py-4"><div><p className="text-sm font-semibold">Request #{request.id}</p><p className="mt-1 text-xs text-muted-foreground">{new Date(request.submittedAt).toLocaleString()}</p></div><div className="flex items-center gap-2"><Badge tone={statusTone(request.status === 'APPROVED' ? 'Approved' : request.status === 'PENDING' ? 'Pending' : request.status === 'REJECTED' ? 'Rejected' : 'Inactive')}>{request.status}</Badge>{request.status === 'PENDING' && <><Button testId={`button-approve-request-${request.id}`} onClick={() => decide(request.id, 'approve')}>Approve</Button><Button testId={`button-reject-request-${request.id}`} variant="danger" onClick={() => decide(request.id, 'reject')}>Reject</Button></>}</div></div>)}</div>}</div></div>;
+
+  return (
+    <div className="page-enter">
+      <SectionTitle
+        eyebrow="People operations"
+        title="Access control"
+        detail="Review manager access requests. Permissions and assignments remain separate HR actions."
+      />
+      {message && <p role="alert" className="mb-4 text-sm font-semibold text-emerald-700">{message}</p>}
+      {error && <p role="alert" className="mb-4 text-sm font-semibold text-rose-700">{error}</p>}
+
+      <div className="space-y-4">
+        {requests.length === 0 ? (
+          <div className="rounded-2xl border border-card-border bg-card p-6 shadow-sm">
+            <EmptyState title="No manager-access requests" detail="Pending and historical requests will appear here." />
+          </div>
+        ) : (
+          requests.map((request) => {
+            const requesterInitials = (request.requesterName || 'M')
+              .split(' ')
+              .map((n) => n[0])
+              .join('')
+              .slice(0, 2)
+              .toUpperCase();
+
+            return (
+              <div
+                key={request.id}
+                data-testid={`card-access-request-${request.id}`}
+                className="rounded-2xl border border-card-border bg-card p-5 shadow-sm transition-all hover:border-slate-300 dark:hover:border-slate-700"
+              >
+                {/* Header row: requester name, request type, date, status, actions */}
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between border-b border-border/70 pb-4">
+                  <div className="flex items-start gap-3.5">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10 font-bold text-sm text-primary">
+                      {requesterInitials}
+                    </div>
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="font-bold text-foreground text-base">
+                          {request.requesterName || `User #${request.requesterUserId || request.id}`}
+                        </h3>
+                        <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
+                          {request.requestType || 'Manager Access Request'}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        Request #{request.id} • Submitted {new Date(request.submittedAt).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 self-start sm:self-auto">
+                    <Badge tone={statusTone(request.status === 'APPROVED' ? 'Approved' : request.status === 'PENDING' ? 'Pending' : request.status === 'REJECTED' ? 'Rejected' : 'Inactive')}>
+                      {request.status}
+                    </Badge>
+                    {request.status === 'PENDING' && (
+                      <div className="flex items-center gap-2 ml-2">
+                        <Button
+                          testId={`button-approve-request-${request.id}`}
+                          disabled={busyId === request.id}
+                          onClick={() => decide(request.id, 'approve')}
+                          className="px-3 py-1.5 text-xs"
+                        >
+                          {busyId === request.id ? 'Processing…' : 'Approve'}
+                        </Button>
+                        <Button
+                          testId={`button-reject-request-${request.id}`}
+                          variant="danger"
+                          disabled={busyId === request.id}
+                          onClick={() => decide(request.id, 'reject')}
+                          className="px-3 py-1.5 text-xs"
+                        >
+                          Reject
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Structured 3-column information grid */}
+                <div className="mt-4 grid gap-4 sm:grid-cols-3 text-xs">
+                  <div>
+                    <p className="font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">
+                      Requester Details
+                    </p>
+                    <p className="mt-1 text-foreground font-medium">{request.requesterEmail || '—'}</p>
+                    <p className="mt-0.5 text-muted-foreground">
+                      Employee ID: <span className="font-semibold text-foreground">{request.requesterEmployeeId || 'Not assigned'}</span>
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">
+                      Requested Access
+                    </p>
+                    <p className="mt-1 text-foreground font-medium leading-relaxed">
+                      {request.requestedPermissions || 'Standard Manager Access (View assigned employees, update profile, view attendance, review leave)'}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">
+                      Requester Reason / Explanation
+                    </p>
+                    <p className={cx("mt-1 leading-relaxed", request.reviewReason ? "text-foreground font-medium" : "text-muted-foreground italic")}>
+                      {request.reviewReason || 'Not provided'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Review details footer if reviewed */}
+                {(request.reviewedAt || request.reviewerName || request.status === 'APPROVED' || request.status === 'REJECTED') && (
+                  <div className="mt-4 pt-3 border-t border-border/50 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-semibold text-foreground">HR Review:</span>
+                      <span>Reviewed by <strong className="text-foreground">{request.reviewerName || 'HR Administrator'}</strong></span>
+                      {request.reviewedAt && (
+                        <span>on {new Date(request.reviewedAt).toLocaleString()}</span>
+                      )}
+                    </div>
+                    {request.status === 'REJECTED' && request.reviewReason && (
+                      <span className="text-rose-600 dark:text-rose-400 font-medium">
+                        Rejection reason: {request.reviewReason}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
 }
 
 function AppContent() {

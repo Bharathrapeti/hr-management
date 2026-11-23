@@ -75,7 +75,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/hr/**").hasRole("HR_ADMIN")
                         .requestMatchers("/api/manager-access/requests").hasRole("EMPLOYEE")
                         .requestMatchers("/api/manager/employees/**", "/api/manager/pending-registrations/**").hasRole("MANAGER")
-                        .requestMatchers("/api/manager-access/me", "/api/employee/me", "/api/employee/personal-details", "/api/employee/correction-requests/**").authenticated()
+                        .requestMatchers("/api/manager-access/me", "/api/employee/me", "/api/employee/personal-details", "/api/employee/correction-requests/**", "/api/employee/account/delete").authenticated()
                         .anyRequest().authenticated())
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint(authenticationEntryPoint())

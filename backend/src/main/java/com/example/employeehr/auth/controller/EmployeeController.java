@@ -46,6 +46,13 @@ public class EmployeeController {
         return hrManagementService.employeeCorrectionRequests(user.id());
     }
 
+    @PostMapping("/account/delete")
+    public HrManagementController.Message deleteMyAccount(Authentication authentication) {
+        AuthUser user = (AuthUser) authentication.getPrincipal();
+        hrManagementService.deactivateSelf(user.id());
+        return new HrManagementController.Message("Account deleted successfully.");
+    }
+
     public record EmployeeProfile(long id, String name, String email, String role, String status) {}
     public record CorrectionRequestDto(@NotBlank @Size(max = 2000) String requestedChanges) {}
 }

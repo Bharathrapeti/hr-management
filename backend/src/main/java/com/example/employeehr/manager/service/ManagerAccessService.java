@@ -54,20 +54,33 @@ public class ManagerAccessService {
 
     @Transactional
     public void request(long userId) {
+        request(userId, null);
+    }
+
+    @Transactional
+    public void request(long userId, String reason) {
         if (!isActiveEmployee(userId)) throw new IllegalArgumentException("Only active employees may request manager access.");
         Integer pending = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM manager_access_requests WHERE requesting_user_id = ? AND status = 'PENDING'",
                 Integer.class, userId);
         if (pending != null && pending > 0) throw new IllegalArgumentException("A manager-access request is already pending.");
-        jdbc.update("INSERT INTO manager_access_requests (requesting_user_id, status) VALUES (?, 'PENDING')", userId);
+        String cleanReason = (reason != null && !reason.isBlank()) ? reason.trim() : null;
+        if (cleanReason != null && cleanReason.length() > 500) cleanReason = cleanReason.substring(0, 500);
+        jdbc.update("INSERT INTO manager_access_requests (requesting_user_id, status, review_reason) VALUES (?, 'PENDING', ?)", userId, cleanReason);
     }
 
     public List<AccessRequest> ownRequests(long userId) {
-        return jdbc.query(
-                "SELECT request_id, status, submitted_at, reviewed_at, review_reason FROM manager_access_requests WHERE requesting_user_id = ? ORDER BY submitted_at DESC",
-                (rs, row) -> new AccessRequest(rs.getLong(1), rs.getString(2),
-                        rs.getTimestamp(3).toInstant(), rs.getTimestamp(4) == null ? null : rs.getTimestamp(4).toInstant(),
-                        rs.getString(5)), userId);
+        return jdbc.query("""
+                SELECT r.request_id, r.status, r.submitted_at, r.reviewed_at, r.review_reason,
+                       u.user_id, u.name, u.email, u.employee_id,
+                       hr.user_id, hr.name
+                FROM manager_access_requests r
+                LEFT JOIN users u ON u.user_id = r.requesting_user_id
+                LEFT JOIN users hr ON hr.user_id = r.reviewed_by_hr_user_id
+                WHERE r.requesting_user_id = ?
+                ORDER BY r.submitted_at DESC
+                """,
+                (rs, row) -> mapAccessRequest(rs), userId);
     }
 
     public List<EmployeeView> assignedEmployees(long managerId) {
@@ -204,8 +217,60 @@ public class ManagerAccessService {
         return count != null && count > 0;
     }
 
-    public record AccessRequest(long id, String status, Instant submittedAt,
-            Instant reviewedAt, String reviewReason) {}
+    public static AccessRequest mapAccessRequest(java.sql.ResultSet rs) throws java.sql.SQLException {
+        long id = rs.getLong(1);
+        String status = rs.getString(2);
+        Instant submittedAt = rs.getTimestamp(3) != null ? rs.getTimestamp(3).toInstant() : Instant.now();
+        Instant reviewedAt = rs.getTimestamp(4) != null ? rs.getTimestamp(4).toInstant() : null;
+        String reason = rs.getString(5);
+
+        Long requesterUserId = null;
+        String requesterName = null;
+        String requesterEmail = null;
+        String requesterEmployeeId = null;
+        Long reviewerHrUserId = null;
+        String reviewerName = null;
+
+        try {
+            int colCount = rs.getMetaData().getColumnCount();
+            if (colCount >= 6 && rs.getObject(6) != null) requesterUserId = rs.getLong(6);
+            if (colCount >= 7) requesterName = rs.getString(7);
+            if (colCount >= 8) requesterEmail = rs.getString(8);
+            if (colCount >= 9) requesterEmployeeId = rs.getString(9);
+            if (colCount >= 10 && rs.getObject(10) != null) reviewerHrUserId = rs.getLong(10);
+            if (colCount >= 11) reviewerName = rs.getString(11);
+        } catch (Exception ignored) {}
+
+        boolean isDirectSignup = reason != null && reason.contains("Manager Registration");
+        String requestType = isDirectSignup ? "Direct Manager Registration" : "Manager Access Request";
+        String requestedPermissions = "Standard Manager Access (View assigned employees, update profile, view attendance, review leave)";
+
+        return new AccessRequest(
+                id, status, submittedAt, reviewedAt, reason,
+                requesterUserId, requesterName, requesterEmail, requesterEmployeeId,
+                reviewerHrUserId, reviewerName, requestType, requestedPermissions
+        );
+    }
+
+    public record AccessRequest(
+            long id,
+            String status,
+            Instant submittedAt,
+            Instant reviewedAt,
+            String reviewReason,
+            Long requesterUserId,
+            String requesterName,
+            String requesterEmail,
+            String requesterEmployeeId,
+            Long reviewerHrUserId,
+            String reviewerName,
+            String requestType,
+            String requestedPermissions) {
+
+        public AccessRequest(long id, String status, Instant submittedAt, Instant reviewedAt, String reviewReason) {
+            this(id, status, submittedAt, reviewedAt, reviewReason, null, null, null, null, null, null, null, null);
+        }
+    }
 
     public record EmployeeView(long id, String name, String email, String employeeId, String status) {}
 

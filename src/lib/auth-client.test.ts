@@ -496,4 +496,108 @@ test('CSRF lifecycle and synchronization regression tests', async (t) => {
     assert.notEqual(user.employeeId, 'EMP-1028');
     assert.notEqual(user.employeeId, 'EMP-0991');
   });
+
+  await t.test('employee self-deletion: /api/employee/account/delete revokes session and deactivates account', async () => {
+    setInMemoryCsrfToken('mock-csrf-token');
+    let called = false;
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      const path = url.toString();
+      if (path.endsWith('/api/employee/account/delete')) {
+        called = true;
+        assert.equal(init?.method, 'POST');
+        return new Response(JSON.stringify({ message: 'Account deactivated successfully.' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      throw new Error(`Unexpected url: ${path}`);
+    }) as typeof fetch;
+
+    const res = await authRequest<{ message: string }>('/api/employee/account/delete', { method: 'POST', body: '{}' });
+    assert.equal(called, true);
+    assert.match(res.message, /deactivated/i);
+  });
+
+  await t.test('HR employee deactivation and activation endpoints', async () => {
+    setInMemoryCsrfToken('mock-csrf-token');
+    const actionsCalled: string[] = [];
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      const path = url.toString();
+      if (path.includes('/api/hr/employees/5/deactivate')) {
+        actionsCalled.push('deactivate');
+        assert.equal(init?.method, 'POST');
+        return new Response(JSON.stringify({ message: 'Employee deactivated.' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (path.includes('/api/hr/employees/5/activate')) {
+        actionsCalled.push('activate');
+        assert.equal(init?.method, 'POST');
+        return new Response(JSON.stringify({ message: 'Employee activated.' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      throw new Error(`Unexpected url: ${path}`);
+    }) as typeof fetch;
+
+    await authRequest('/api/hr/employees/5/deactivate', { method: 'POST', body: '{}' });
+    await authRequest('/api/hr/employees/5/activate', { method: 'POST', body: '{}' });
+    assert.deepEqual(actionsCalled, ['deactivate', 'activate']);
+  });
+
+  await t.test('manager access request with optional reason and HR access control card query', async () => {
+    setInMemoryCsrfToken('mock-csrf-token');
+    let sentReason: string | null = null;
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      const path = url.toString();
+      if (path.endsWith('/api/manager-access/requests') && init?.method === 'POST') {
+        const parsed = JSON.parse((init?.body as string) || '{}');
+        sentReason = parsed.reason || null;
+        return new Response(JSON.stringify({ message: 'Manager-access request submitted.' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (path.endsWith('/api/hr/manager-access/requests') && (!init?.method || init.method === 'GET')) {
+        return new Response(
+          JSON.stringify([
+            {
+              id: 10,
+              status: 'PENDING',
+              submittedAt: '2026-11-23T01:00:00Z',
+              reviewedAt: null,
+              reviewReason: 'Leading team coordinates',
+              requesterUserId: 15,
+              requesterName: 'Alex Morgan',
+              requesterEmail: 'alex.morgan@northstar.edu',
+              requesterEmployeeId: 'EMP-1050',
+              reviewerHrUserId: null,
+              reviewerName: null,
+              requestType: 'Manager Access Request',
+              requestedPermissions: 'Standard Manager Access',
+            },
+          ]),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      throw new Error(`Unexpected url: ${path}`);
+    }) as typeof fetch;
+
+    await authRequest('/api/manager-access/requests', {
+      method: 'POST',
+      body: JSON.stringify({ reason: 'Leading team coordinates' }),
+    });
+    assert.equal(sentReason, 'Leading team coordinates');
+
+    const requests = await authRequest<any[]>('/api/hr/manager-access/requests');
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].requesterName, 'Alex Morgan');
+    assert.equal(requests[0].requesterEmail, 'alex.morgan@northstar.edu');
+    assert.equal(requests[0].requesterEmployeeId, 'EMP-1050');
+    assert.equal(requests[0].requestType, 'Manager Access Request');
+    assert.equal(requests[0].reviewReason, 'Leading team coordinates');
+    assert.equal(requests[0].status, 'PENDING');
+  });
 });

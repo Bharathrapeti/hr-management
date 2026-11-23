@@ -608,6 +608,20 @@ public class HrManagementService {
     }
 
     @Transactional
+    public void deactivateSelf(long userId) {
+        var users = jdbc.query("SELECT role FROM users WHERE user_id = ?", (rs, row) -> rs.getString(1), userId);
+        if (users.isEmpty()) throw new IllegalArgumentException("User not found.");
+        if ("HR_ADMIN".equals(users.getFirst())) {
+            Integer lastHr = jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM users WHERE role = 'HR_ADMIN' AND status = 'ACTIVE' AND user_id <> ?",
+                    Integer.class, userId);
+            if (lastHr == null || lastHr == 0) throw new IllegalArgumentException("The last active HR account cannot be deactivated.");
+        }
+        jdbc.update("UPDATE users SET status = 'INACTIVE', updated_at = UTC_TIMESTAMP() WHERE user_id = ?", userId);
+        jdbc.update("UPDATE auth_sessions SET revoked_at = UTC_TIMESTAMP() WHERE user_id = ? AND revoked_at IS NULL", userId);
+    }
+
+    @Transactional
     public void activate(long userId, long actorId) {
         ensureHr(actorId);
         var users = jdbc.query("SELECT status FROM users WHERE user_id = ?", (rs, row) -> rs.getString(1), userId);
@@ -620,9 +634,16 @@ public class HrManagementService {
     }
 
     public List<ManagerAccessService.AccessRequest> requests() {
-        return jdbc.query("SELECT request_id, status, submitted_at, reviewed_at, review_reason FROM manager_access_requests ORDER BY submitted_at DESC",
-                (rs, row) -> new ManagerAccessService.AccessRequest(rs.getLong(1), rs.getString(2),
-                        rs.getTimestamp(3).toInstant(), rs.getTimestamp(4) == null ? null : rs.getTimestamp(4).toInstant(), rs.getString(5)));
+        return jdbc.query("""
+                SELECT r.request_id, r.status, r.submitted_at, r.reviewed_at, r.review_reason,
+                       u.user_id, u.name, u.email, u.employee_id,
+                       hr.user_id, hr.name
+                FROM manager_access_requests r
+                LEFT JOIN users u ON u.user_id = r.requesting_user_id
+                LEFT JOIN users hr ON hr.user_id = r.reviewed_by_hr_user_id
+                ORDER BY r.submitted_at DESC
+                """,
+                (rs, row) -> ManagerAccessService.mapAccessRequest(rs));
     }
 
     public List<ManagerAccessService.EmployeeView> assignments(long managerId) {

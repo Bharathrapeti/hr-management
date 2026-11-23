@@ -20,10 +20,13 @@ public class ManagerAccessController {
     }
 
     @PostMapping("/manager-access/requests")
-    public Message request(Authentication authentication) {
-        service.request(user(authentication).id());
+    public Message request(Authentication authentication, @RequestBody(required = false) RequestDto requestDto) {
+        String reason = requestDto != null ? requestDto.reason() : null;
+        service.request(user(authentication).id(), reason);
         return new Message("Manager-access request submitted.");
     }
+
+    public record RequestDto(@Size(max = 500) String reason) {}
 
     @GetMapping("/manager-access/me")
     public List<ManagerAccessService.AccessRequest> ownRequests(Authentication authentication) {
