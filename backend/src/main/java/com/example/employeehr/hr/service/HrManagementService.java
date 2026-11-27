@@ -622,6 +622,99 @@ public class HrManagementService {
     }
 
     @Transactional
+    public void deleteSelf(long userId, String confirmation) {
+        if (!"Delete".equals(confirmation)) {
+            throw new IllegalArgumentException("Confirmation word 'Delete' must match exactly.");
+        }
+        var users = jdbc.query("SELECT email, role FROM users WHERE user_id = ?",
+                (rs, row) -> new String[]{rs.getString(1), rs.getString(2)}, userId);
+        if (users.isEmpty()) throw new IllegalArgumentException("User not found.");
+        String[] userRow = users.getFirst();
+        String email = userRow[0];
+        String role = userRow[1];
+
+        if ("HR_ADMIN".equals(role)) {
+            Integer lastHr = jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM users WHERE role = 'HR_ADMIN' AND status = 'ACTIVE' AND user_id <> ?",
+                    Integer.class, userId);
+            if (lastHr == null || lastHr == 0) {
+                throw new IllegalArgumentException("The last active HR account cannot be deleted.");
+            }
+        }
+
+        executePermanentUserDeletion(userId, email);
+    }
+
+    @Transactional
+    public void deleteUserByHr(long userId, long actorId, String confirmation) {
+        ensureHr(actorId);
+        if (!"Delete".equals(confirmation)) {
+            throw new IllegalArgumentException("Confirmation word 'Delete' must match exactly.");
+        }
+        var users = jdbc.query("SELECT email, role FROM users WHERE user_id = ?",
+                (rs, row) -> new String[]{rs.getString(1), rs.getString(2)}, userId);
+        if (users.isEmpty()) throw new IllegalArgumentException("User not found.");
+        String[] userRow = users.getFirst();
+        String email = userRow[0];
+        String role = userRow[1];
+
+        if ("HR_ADMIN".equals(role)) {
+            Integer lastHr = jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM users WHERE role = 'HR_ADMIN' AND status = 'ACTIVE' AND user_id <> ?",
+                    Integer.class, userId);
+            if (lastHr == null || lastHr == 0) {
+                throw new IllegalArgumentException("The last active HR account cannot be deleted.");
+            }
+        }
+
+        executePermanentUserDeletion(userId, email);
+    }
+
+    private void executePermanentUserDeletion(long userId, String email) {
+        // 1. Clear manager assignments on other users if this user was their assigned manager
+        try {
+            jdbc.update("UPDATE users SET assigned_manager_user_id = NULL WHERE assigned_manager_user_id = ?", userId);
+        } catch (BadSqlGrammarException ignored) {}
+
+        // 2. Clear reviewer references on other users if this user was reviewer
+        try {
+            jdbc.update("UPDATE users SET reviewed_by_hr_user_id = NULL WHERE reviewed_by_hr_user_id = ?", userId);
+        } catch (BadSqlGrammarException ignored) {}
+
+        // 3. Clear employee correction requests
+        try {
+            jdbc.update("DELETE FROM employee_correction_requests WHERE employee_user_id = ?", userId);
+            jdbc.update("UPDATE employee_correction_requests SET resolved_by_hr_user_id = NULL WHERE resolved_by_hr_user_id = ?", userId);
+        } catch (BadSqlGrammarException ignored) {}
+
+        // 4. Delete manager employee assignments and audit logs
+        jdbc.update("DELETE FROM manager_employee_assignments WHERE manager_user_id = ? OR employee_user_id = ?", userId, userId);
+        jdbc.update("DELETE FROM manager_assignment_audit WHERE manager_user_id = ? OR employee_user_id = ?", userId, userId);
+
+        // 5. Delete manager permissions and audit logs
+        jdbc.update("DELETE FROM manager_permissions WHERE manager_user_id = ?", userId);
+        jdbc.update("DELETE FROM manager_permission_audit WHERE manager_user_id = ?", userId);
+
+        // 6. Delete manager access requests (both as requester and clear reviewer)
+        jdbc.update("DELETE FROM manager_access_requests WHERE requesting_user_id = ?", userId);
+        jdbc.update("UPDATE manager_access_requests SET reviewed_by_hr_user_id = NULL WHERE reviewed_by_hr_user_id = ?", userId);
+
+        // 7. Delete authentication sessions, OTPs, and login attempts
+        jdbc.update("DELETE FROM auth_sessions WHERE user_id = ?", userId);
+        jdbc.update("DELETE FROM auth_otps WHERE user_id = ?", userId);
+        jdbc.update("DELETE FROM auth_otp_requests WHERE user_id = ?", userId);
+        if (email != null && !email.isBlank()) {
+            jdbc.update("DELETE FROM auth_login_attempts WHERE email = ?", email);
+        }
+
+        // 8. Delete user record
+        int deleted = jdbc.update("DELETE FROM users WHERE user_id = ?", userId);
+        if (deleted == 0) {
+            throw new IllegalArgumentException("User could not be deleted.");
+        }
+    }
+
+    @Transactional
     public void activate(long userId, long actorId) {
         ensureHr(actorId);
         var users = jdbc.query("SELECT status FROM users WHERE user_id = ?", (rs, row) -> rs.getString(1), userId);

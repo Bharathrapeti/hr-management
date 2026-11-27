@@ -497,15 +497,17 @@ test('CSRF lifecycle and synchronization regression tests', async (t) => {
     assert.notEqual(user.employeeId, 'EMP-0991');
   });
 
-  await t.test('employee self-deletion: /api/employee/account/delete revokes session and deactivates account', async () => {
+  await t.test('employee self-deletion: /api/employee/account/delete sends confirmation word Delete', async () => {
     setInMemoryCsrfToken('mock-csrf-token');
     let called = false;
+    let receivedPayload = '';
     globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
       const path = url.toString();
       if (path.endsWith('/api/employee/account/delete')) {
         called = true;
         assert.equal(init?.method, 'POST');
-        return new Response(JSON.stringify({ message: 'Account deactivated successfully.' }), {
+        receivedPayload = init?.body as string;
+        return new Response(JSON.stringify({ message: 'Account deleted successfully.' }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         });
@@ -513,9 +515,50 @@ test('CSRF lifecycle and synchronization regression tests', async (t) => {
       throw new Error(`Unexpected url: ${path}`);
     }) as typeof fetch;
 
-    const res = await authRequest<{ message: string }>('/api/employee/account/delete', { method: 'POST', body: '{}' });
+    const res = await authRequest<{ message: string }>('/api/employee/account/delete', {
+      method: 'POST',
+      body: JSON.stringify({ confirmation: 'Delete' }),
+    });
     assert.equal(called, true);
-    assert.match(res.message, /deactivated/i);
+    assert.match(receivedPayload, /"confirmation":"Delete"/);
+    assert.match(res.message, /deleted/i);
+  });
+
+  await t.test('HR account deletion for employees and managers with Delete confirmation', async () => {
+    setInMemoryCsrfToken('mock-csrf-token');
+    const deletedTargets: string[] = [];
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      const path = url.toString();
+      assert.equal(init?.method, 'POST');
+      const body = JSON.parse((init?.body as string) || '{}');
+      assert.equal(body.confirmation, 'Delete');
+      if (path.includes('/api/hr/employees/15/delete')) {
+        deletedTargets.push('employee-15');
+        return new Response(JSON.stringify({ message: 'User account permanently deleted.' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (path.includes('/api/hr/users/22/delete')) {
+        deletedTargets.push('manager-22');
+        return new Response(JSON.stringify({ message: 'User account permanently deleted.' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      throw new Error(`Unexpected url: ${path}`);
+    }) as typeof fetch;
+
+    await authRequest('/api/hr/employees/15/delete', {
+      method: 'POST',
+      body: JSON.stringify({ confirmation: 'Delete' }),
+    });
+    await authRequest('/api/hr/users/22/delete', {
+      method: 'POST',
+      body: JSON.stringify({ confirmation: 'Delete' }),
+    });
+
+    assert.deepEqual(deletedTargets, ['employee-15', 'manager-22']);
   });
 
   await t.test('HR employee deactivation and activation endpoints', async () => {

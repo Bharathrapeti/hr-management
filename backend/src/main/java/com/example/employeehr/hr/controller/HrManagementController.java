@@ -166,7 +166,30 @@ public class HrManagementController {
         return new Message("Account deactivated.");
     }
 
+    @PostMapping("/users/{id}/delete")
+    public Message deleteUser(@PathVariable long id, @RequestBody(required = false) DeleteAccountRequest request, Authentication authentication) {
+        String confirmation = request != null ? request.confirmation() : null;
+        service.deleteUserByHr(id, user(authentication).id(), confirmation);
+        return new Message("User account permanently deleted.");
+    }
+
+    @DeleteMapping("/users/{id}")
+    public Message deleteUserViaDelete(@PathVariable long id, @RequestBody(required = false) DeleteAccountRequest request, Authentication authentication) {
+        return deleteUser(id, request, authentication);
+    }
+
+    @PostMapping("/employees/{id}/delete")
+    public Message deleteEmployee(@PathVariable long id, @RequestBody(required = false) DeleteAccountRequest request, Authentication authentication) {
+        return deleteUser(id, request, authentication);
+    }
+
+    @DeleteMapping("/employees/{id}")
+    public Message deleteEmployeeViaDelete(@PathVariable long id, @RequestBody(required = false) DeleteAccountRequest request, Authentication authentication) {
+        return deleteUser(id, request, authentication);
+    }
+
     private AuthUser user(Authentication authentication) { return (AuthUser) authentication.getPrincipal(); }
+    public record DeleteAccountRequest(String confirmation) {}
     public record CreateEmployee(@NotBlank @Size(max = 160) String name, @NotBlank @Email @Size(max = 320) String email) {}
     public record ProfileUpdate(@NotBlank @Size(max = 160) String name, @Size(max = 64) String employeeId) {}
     public record Decision(@Size(max = 500) String reason) {}

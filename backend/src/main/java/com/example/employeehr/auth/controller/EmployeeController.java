@@ -47,12 +47,19 @@ public class EmployeeController {
     }
 
     @PostMapping("/account/delete")
-    public HrManagementController.Message deleteMyAccount(Authentication authentication) {
+    public HrManagementController.Message deleteMyAccount(@RequestBody(required = false) DeleteAccountRequest request, Authentication authentication) {
         AuthUser user = (AuthUser) authentication.getPrincipal();
-        hrManagementService.deactivateSelf(user.id());
+        String confirmation = request != null ? request.confirmation() : null;
+        hrManagementService.deleteSelf(user.id(), confirmation);
         return new HrManagementController.Message("Account deleted successfully.");
     }
 
+    @DeleteMapping("/account")
+    public HrManagementController.Message deleteMyAccountViaDelete(@RequestBody(required = false) DeleteAccountRequest request, Authentication authentication) {
+        return deleteMyAccount(request, authentication);
+    }
+
+    public record DeleteAccountRequest(String confirmation) {}
     public record EmployeeProfile(long id, String name, String email, String role, String status) {}
     public record CorrectionRequestDto(@NotBlank @Size(max = 2000) String requestedChanges) {}
 }

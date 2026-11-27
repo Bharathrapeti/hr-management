@@ -416,4 +416,77 @@ class PersonalDetailsAndManagerApprovalTest {
         assertThat(details.employeeId()).isEqualTo("EMP-1043");
         verify(jdbc).update(contains("UPDATE users SET employee_id = ? WHERE user_id = ?"), eq("EMP-1043"), eq(50L));
     }
+
+    @Test
+    void deleteSelfRequiresExactWordDelete() {
+        assertThatThrownBy(() -> hrService.deleteSelf(50L, "delete"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Confirmation word 'Delete' must match exactly.");
+
+        assertThatThrownBy(() -> hrService.deleteSelf(50L, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Confirmation word 'Delete' must match exactly.");
+
+        assertThatThrownBy(() -> hrService.deleteSelf(50L, "yes"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Confirmation word 'Delete' must match exactly.");
+    }
+
+    @Test
+    void deleteSelfPermanentlyRemovesUserAndAssociatedRecords() {
+        when(jdbc.query(contains("SELECT email, role FROM users WHERE user_id = ?"),
+                any(RowMapper.class), eq(50L)))
+                .thenAnswer(inv -> {
+                    RowMapper<?> mapper = inv.getArgument(1);
+                    java.sql.ResultSet rs = mock(java.sql.ResultSet.class);
+                    when(rs.getString(1)).thenReturn("employee@example.com");
+                    when(rs.getString(2)).thenReturn("EMPLOYEE");
+                    return List.of(mapper.mapRow(rs, 1));
+                });
+        when(jdbc.update(contains("DELETE FROM users WHERE user_id = ?"), eq(50L))).thenReturn(1);
+
+        hrService.deleteSelf(50L, "Delete");
+
+        verify(jdbc).update(contains("DELETE FROM auth_sessions WHERE user_id = ?"), eq(50L));
+        verify(jdbc).update(contains("DELETE FROM auth_otps WHERE user_id = ?"), eq(50L));
+        verify(jdbc).update(contains("DELETE FROM auth_otp_requests WHERE user_id = ?"), eq(50L));
+        verify(jdbc).update(contains("DELETE FROM auth_login_attempts WHERE email = ?"), eq("employee@example.com"));
+        verify(jdbc).update(contains("DELETE FROM manager_employee_assignments WHERE manager_user_id = ? OR employee_user_id = ?"), eq(50L), eq(50L));
+        verify(jdbc).update(contains("DELETE FROM users WHERE user_id = ?"), eq(50L));
+    }
+
+    @Test
+    void deleteUserByHrRequiresHrAdminAndExactConfirmation() {
+        mockHrUser(99L, false);
+        assertThatThrownBy(() -> hrService.deleteUserByHr(50L, 99L, "Delete"))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessageContaining("HR authorization required.");
+
+        mockHrUser(1L, true);
+        assertThatThrownBy(() -> hrService.deleteUserByHr(50L, 1L, "wrong"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Confirmation word 'Delete' must match exactly.");
+    }
+
+    @Test
+    void deleteUserByHrPermanentlyRemovesManagerOrEmployee() {
+        mockHrUser(1L, true);
+        when(jdbc.query(contains("SELECT email, role FROM users WHERE user_id = ?"),
+                any(RowMapper.class), eq(60L)))
+                .thenAnswer(inv -> {
+                    RowMapper<?> mapper = inv.getArgument(1);
+                    java.sql.ResultSet rs = mock(java.sql.ResultSet.class);
+                    when(rs.getString(1)).thenReturn("manager@example.com");
+                    when(rs.getString(2)).thenReturn("EMPLOYEE");
+                    return List.of(mapper.mapRow(rs, 1));
+                });
+        when(jdbc.update(contains("DELETE FROM users WHERE user_id = ?"), eq(60L))).thenReturn(1);
+
+        hrService.deleteUserByHr(60L, 1L, "Delete");
+
+        verify(jdbc).update(contains("UPDATE users SET assigned_manager_user_id = NULL WHERE assigned_manager_user_id = ?"), eq(60L));
+        verify(jdbc).update(contains("DELETE FROM manager_permissions WHERE manager_user_id = ?"), eq(60L));
+        verify(jdbc).update(contains("DELETE FROM manager_access_requests WHERE requesting_user_id = ?"), eq(60L));
+        verify(jdbc).update(contains("DELETE FROM users WHERE user_id = ?"), eq(60L));
+    }
 }

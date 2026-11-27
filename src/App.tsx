@@ -4,7 +4,7 @@ import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import {
-  Activity, AlertCircle, ArrowRight, BarChart3, Bell, CalendarCheck2,
+  Activity, AlertCircle, AlertTriangle, ArrowRight, BarChart3, Bell, CalendarCheck2,
   CalendarDays, Camera, Check, CheckCircle2, ChevronDown, CircleHelp, Clock3, Download,
   ExternalLink, Eye, File, FileCheck, FilePlus, FileText, Filter, LayoutDashboard, ListFilter, LogOut, Mail, Menu,
   Paperclip, Pencil, Plus, Search, Settings, ShieldCheck, Trash2, UploadCloud, UserCheck, UserCog, UserRound, Users,
@@ -531,6 +531,178 @@ function DocumentViewerModal({
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+interface DeleteConfirmationModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: (confirmationWord: string) => Promise<void>;
+  title?: string;
+  accountName?: string;
+  accountEmail?: string;
+  accountRole?: string;
+}
+
+function DeleteConfirmationModal({
+  isOpen,
+  onClose,
+  onConfirm,
+  title,
+  accountName,
+  accountEmail,
+  accountRole,
+}: DeleteConfirmationModalProps) {
+  const [step, setStep] = useState<1 | 2>(1);
+  const [confirmationInput, setConfirmationInput] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (isOpen) {
+      setStep(1);
+      setConfirmationInput('');
+      setBusy(false);
+      setError('');
+    }
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const handleFinalConfirm = async () => {
+    if (confirmationInput !== 'Delete') return;
+    setBusy(true);
+    setError('');
+    try {
+      await onConfirm('Delete');
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to complete account deletion.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const displayName = accountName ? (accountEmail ? `${accountName} (${accountEmail})` : accountName) : 'your account';
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-150"
+      onClick={busy ? undefined : onClose}
+    >
+      <div
+        className="relative max-w-md w-full rounded-2xl bg-white dark:bg-card border border-border p-6 shadow-2xl space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {step === 1 ? (
+          <div className="space-y-4">
+            <div className="flex items-start gap-3.5">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400">
+                <AlertTriangle size={22} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-foreground">
+                  {title || 'Delete account?'}
+                </h3>
+                <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
+                  Are you absolutely sure you want to permanently delete{' '}
+                  <span className="font-semibold text-foreground">{displayName}</span>?
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-rose-200 dark:border-rose-900/50 bg-rose-50/80 dark:bg-rose-950/30 p-3.5 text-xs leading-relaxed text-rose-900 dark:text-rose-200">
+              <p className="font-semibold mb-1">Warning: Permanent Deletion</p>
+              This action cannot be undone. The account, login access, and all associated personal records and relationships will be permanently removed from the website and database.
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <Button
+                variant="secondary"
+                testId="button-cancel-delete-step1"
+                disabled={busy}
+                onClick={onClose}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                testId="button-confirm-delete-step1"
+                disabled={busy}
+                onClick={() => {
+                  setStep(2);
+                  setError('');
+                }}
+              >
+                Yes, Delete
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="flex items-start gap-3.5">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400">
+                <AlertTriangle size={22} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-foreground">
+                  Confirm permanent deletion
+                </h3>
+                <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
+                  To confirm permanent deletion, please type the exact word{' '}
+                  <span className="font-mono font-bold text-rose-600 dark:text-rose-400 bg-rose-100/70 dark:bg-rose-950/50 px-1.5 py-0.5 rounded">
+                    Delete
+                  </span>{' '}
+                  in the box below:
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-foreground mb-1.5">
+                Type Delete to confirm
+              </label>
+              <input
+                data-testid="input-delete-confirmation"
+                type="text"
+                autoFocus
+                value={confirmationInput}
+                onChange={(e) => setConfirmationInput(e.target.value)}
+                placeholder="Delete"
+                className="h-10 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-200 dark:focus:ring-rose-950"
+              />
+            </div>
+
+            {error && (
+              <p role="alert" className="rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 p-2.5 text-xs font-semibold text-rose-700 dark:text-rose-300">
+                {error}
+              </p>
+            )}
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <Button
+                variant="secondary"
+                testId="button-cancel-delete-step2"
+                disabled={busy}
+                onClick={onClose}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                testId="button-confirm-delete-final"
+                disabled={confirmationInput !== 'Delete' || busy}
+                onClick={handleFinalConfirm}
+              >
+                {busy ? 'Deleting account…' : 'Delete permanently'}
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2844,6 +3016,7 @@ function HREmployees({ employees, setEmployees }: { employees: Employee[]; setEm
   const [savingDetails, setSavingDetails] = useState(false);
   const [detailsMessage, setDetailsMessage] = useState('');
   const [detailsError, setDetailsError] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<Employee | null>(null);
 
   const loadBackendUsers = () => {
     authRequest<BackendUser[]>('/api/hr/users')
@@ -3026,6 +3199,23 @@ function HREmployees({ employees, setEmployees }: { employees: Employee[]; setEm
       )
     );
     loadBackendUsers();
+  };
+
+  const handleConfirmDeleteEmployee = async (confirmationWord: string) => {
+    if (!deleteTarget) return;
+    const match = backendUsers.find((u) => u.email.toLowerCase() === deleteTarget.email.toLowerCase());
+    const numericId = match ? match.id : (deleteTarget.id.startsWith('EMP-') ? 1 : Number(deleteTarget.id));
+    await ensureCsrf();
+    await authRequest(`/api/hr/employees/${numericId}/delete`, {
+      method: 'POST',
+      body: JSON.stringify({ confirmation: confirmationWord }),
+    });
+    setEmployees((prev) =>
+      prev.filter((e) => e.id !== deleteTarget.id && e.email.toLowerCase() !== deleteTarget.email.toLowerCase())
+    );
+    loadBackendUsers();
+    setDetailsMessage(`Employee ${deleteTarget.name} has been permanently deleted.`);
+    window.setTimeout(() => setDetailsMessage(''), 4000);
   };
   const addEmployee = (event: FormEvent) => {
     event.preventDefault();
@@ -3319,6 +3509,14 @@ function HREmployees({ employees, setEmployees }: { employees: Employee[]; setEm
                       >
                         {employee.status === 'Active' ? 'Deactivate' : 'Activate'}
                       </Button>
+                      <Button
+                        testId={`button-delete-employee-${employee.id}`}
+                        variant="danger"
+                        className="px-2.5 text-xs"
+                        onClick={() => setDeleteTarget(employee)}
+                      >
+                        <Trash2 size={13} /> Delete
+                      </Button>
                     </div>
                   </td>
                 </tr>
@@ -3330,6 +3528,16 @@ function HREmployees({ employees, setEmployees }: { employees: Employee[]; setEm
           )}
         </div>
       </div>
+
+      <DeleteConfirmationModal
+        isOpen={!!deleteTarget}
+        title={`Delete employee: ${deleteTarget?.name}`}
+        accountName={deleteTarget?.name}
+        accountEmail={deleteTarget?.email}
+        accountRole="Employee"
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleConfirmDeleteEmployee}
+      />
     </div>
   );
 }
@@ -3568,31 +3776,102 @@ function HRReports({ attendance, leaves }: { attendance: Attendance[]; leaves: L
   return <div className="page-enter"><SectionTitle eyebrow="People operations" title="Reports" detail="Build a focused view before exporting it for your records." action={<Badge tone="neutral"><Download size={12} /> Local export</Badge>} /><div className="grid gap-6 lg:grid-cols-[.75fr_1.25fr]"><div className="rounded-2xl border border-card-border bg-card p-6 shadow-sm"><h2 className="font-bold">Report filters</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Choose a period and report lens.</p><div className="mt-6 space-y-4"><label className="block text-sm font-medium">Report<select data-testid="select-report-type" value={report} onChange={(e) => setReport(e.target.value)} className="mt-2 h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary"><option>Attendance summary</option><option>Leave activity</option><option>Employee directory</option></select></label><label className="block text-sm font-medium">Date range<select data-testid="select-report-range" value={range} onChange={(e) => setRange(e.target.value)} className="mt-2 h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary"><option>This month</option><option>Last month</option><option>Last 90 days</option></select></label><Button testId="button-export-report" onClick={exportReport} className="mt-3 w-full"><Download size={16} /> Prepare export</Button>{notice && <p className="flex items-center gap-2 text-xs font-semibold text-emerald-700"><CheckCircle2 size={15} /> {notice}</p>}</div></div><div className="rounded-2xl border border-card-border bg-card p-6 shadow-sm"><div className="flex items-start justify-between"><div><h2 className="font-bold">Preview</h2><p className="mt-1 text-xs text-muted-foreground">{report} · {range}</p></div><div className="rounded-lg bg-primary/10 p-2 text-primary"><BarChart3 size={18} /></div></div><div className="mt-6 grid grid-cols-2 gap-3"><div className="rounded-xl bg-muted/60 p-4"><p className="text-xs text-muted-foreground">Attendance rows</p><p className="mt-2 text-2xl font-bold">{attendance.length}</p></div><div className="rounded-xl bg-muted/60 p-4"><p className="text-xs text-muted-foreground">Leave requests</p><p className="mt-2 text-2xl font-bold">{leaves.length}</p></div></div><div className="mt-6 rounded-xl border border-dashed border-border p-5"><div className="flex items-center gap-2 text-sm font-semibold"><ListFilter size={16} className="text-primary" /> Export includes</div><ul className="mt-3 space-y-2 text-xs text-muted-foreground"><li>• Dates, status, and working hours</li><li>• Department and employee identifiers</li><li>• Review-ready CSV formatting</li></ul></div></div></div></div>;
 }
 
-function SettingsPage({ role }: { role: Role }) {
+function SettingsPage({
+  role,
+  currentUser,
+  setEmployees,
+}: {
+  role: Role;
+  currentUser?: AuthUser | null;
+  setEmployees?: (value: Employee[] | ((prev: Employee[]) => Employee[])) => void;
+}) {
   const [theme, setTheme] = useState(() => localStorage.getItem('meridian-theme') || 'light');
-  const [deleting, setDeleting] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   useEffect(() => { document.documentElement.classList.toggle('dark', theme === 'dark'); localStorage.setItem('meridian-theme', theme); }, [theme]);
   const reset = () => { ['meridian-role', 'meridian-authenticated', 'meridian-employees', 'meridian-attendance', 'meridian-leaves', 'meridian-theme'].forEach((key) => localStorage.removeItem(key)); window.location.reload(); };
 
-  const handleDeleteAccount = async () => {
-    if (!window.confirm('Are you sure you want to delete your account? You will be signed out and will no longer be able to log in. Your historical workday records will be preserved for HR compliance.')) {
-      return;
-    }
-    setDeleting(true);
+  const handleConfirmDelete = async (confirmationWord: string) => {
     setDeleteError('');
-    try {
-      await ensureCsrf();
-      await authRequest('/api/employee/account/delete', { method: 'POST', body: '{}' });
-      ['meridian-role', 'meridian-authenticated'].forEach((key) => localStorage.removeItem(key));
-      window.location.href = '/';
-    } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : 'Unable to delete account.');
-      setDeleting(false);
+    await ensureCsrf();
+    await authRequest('/api/employee/account/delete', {
+      method: 'POST',
+      body: JSON.stringify({ confirmation: confirmationWord }),
+    });
+    if (currentUser?.email && setEmployees) {
+      setEmployees((prev) => prev.filter((e) => e.email.toLowerCase() !== currentUser.email!.toLowerCase()));
     }
+    ['meridian-role', 'meridian-authenticated'].forEach((key) => localStorage.removeItem(key));
+    if (currentUser?.email) {
+      localStorage.removeItem(`meridian-profile-${currentUser.email.toLowerCase()}`);
+    }
+    window.location.href = '/';
   };
 
-  return <div className="page-enter"><SectionTitle eyebrow="Account" title="Settings" detail="Your access level is managed by the server-side account." /><div className="max-w-3xl space-y-5"><div className="rounded-2xl border border-card-border bg-card p-6 shadow-sm"><div className="flex items-start gap-4"><div className="rounded-lg bg-primary/10 p-2 text-primary"><UserCog size={18} /></div><div><h2 className="font-bold">Current access</h2><p className="mt-1 text-sm text-muted-foreground">{role === 'hr' ? 'HR administrator' : role === 'manager' ? 'Manager access' : 'Employee access'} is enforced by the authenticated backend session.</p><p className="mt-3 text-xs font-semibold text-emerald-700">Role changes require an authorized server-side workflow.</p></div></div></div><div className="rounded-2xl border border-card-border bg-card p-6 shadow-sm"><div className="flex items-center justify-between gap-4"><div><h2 className="font-bold">Appearance</h2><p className="mt-1 text-sm text-muted-foreground">Choose the visual theme for this browser.</p></div><select data-testid="select-theme" value={theme} onChange={(e) => setTheme(e.target.value)} className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary"><option value="light">Light</option><option value="dark">Dark</option></select></div></div>{role === 'employee' && <div className="rounded-2xl border border-rose-200 bg-rose-50/60 p-6"><h2 className="font-bold text-rose-900">Delete account</h2><p className="mt-1 text-sm leading-6 text-rose-800/70">Deactivate your employee account and revoke active sessions. Your historical workday records will be preserved for HR compliance.</p>{deleteError && <p role="alert" className="mt-3 text-xs font-semibold text-rose-700">{deleteError}</p>}<Button testId="button-delete-account" variant="danger" className="mt-4" disabled={deleting} onClick={handleDeleteAccount}>{deleting ? 'Deleting account…' : 'Delete my account'}</Button></div>}<div className="rounded-2xl border border-rose-200 bg-rose-50/60 p-6"><h2 className="font-bold text-rose-900">Reset local demo</h2><p className="mt-1 text-sm leading-6 text-rose-800/70">Restore seeded employees, attendance, leave records, and light theme. This cannot be undone.</p><Button testId="button-reset-demo" variant="danger" className="mt-4" onClick={reset}>Reset demo data</Button></div></div></div>;
+  return (
+    <div className="page-enter">
+      <SectionTitle eyebrow="Account" title="Settings" detail="Your access level is managed by the server-side account." />
+      <div className="max-w-3xl space-y-5">
+        <div className="rounded-2xl border border-card-border bg-card p-6 shadow-sm">
+          <div className="flex items-start gap-4">
+            <div className="rounded-lg bg-primary/10 p-2 text-primary"><UserCog size={18} /></div>
+            <div>
+              <h2 className="font-bold">Current access</h2>
+              <p className="mt-1 text-sm text-muted-foreground">{role === 'hr' ? 'HR administrator' : role === 'manager' ? 'Manager access' : 'Employee access'} is enforced by the authenticated backend session.</p>
+              <p className="mt-3 text-xs font-semibold text-emerald-700">Role changes require an authorized server-side workflow.</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-card-border bg-card p-6 shadow-sm">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h2 className="font-bold">Appearance</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Choose the visual theme for this browser.</p>
+            </div>
+            <select data-testid="select-theme" value={theme} onChange={(e) => setTheme(e.target.value)} className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary">
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </div>
+        </div>
+
+        {role === 'employee' && (
+          <div className="rounded-2xl border border-rose-200 bg-rose-50/60 p-6">
+            <h2 className="font-bold text-rose-900">Delete account</h2>
+            <p className="mt-1 text-sm leading-6 text-rose-800/70">
+              Permanently delete your employee account and remove all personal information and credentials.
+            </p>
+            {deleteError && <p role="alert" className="mt-3 text-xs font-semibold text-rose-700">{deleteError}</p>}
+            <Button
+              testId="button-delete-account"
+              variant="danger"
+              className="mt-4"
+              onClick={() => setDeleteModalOpen(true)}
+            >
+              Delete my account
+            </Button>
+          </div>
+        )}
+
+        <div className="rounded-2xl border border-rose-200 bg-rose-50/60 p-6">
+          <h2 className="font-bold text-rose-900">Reset local demo</h2>
+          <p className="mt-1 text-sm leading-6 text-rose-800/70">Restore seeded employees, attendance, leave records, and light theme. This cannot be undone.</p>
+          <Button testId="button-reset-demo" variant="danger" className="mt-4" onClick={reset}>Reset demo data</Button>
+        </div>
+      </div>
+
+      <DeleteConfirmationModal
+        isOpen={deleteModalOpen}
+        title="Delete your employee account?"
+        accountName={currentUser?.name}
+        accountEmail={currentUser?.email}
+        accountRole="Employee"
+        onClose={() => setDeleteModalOpen(false)}
+        onConfirm={handleConfirmDelete}
+      />
+    </div>
+  );
 }
 
 function ManagerDashboard({
@@ -4202,6 +4481,7 @@ function HRRegistrationsPage({
   const [resolvingId, setResolvingId] = useState<number | null>(null);
   const [dismissingId, setDismissingId] = useState<number | null>(null);
   const [resolutionNote, setResolutionNote] = useState('');
+  const [deleteRegTarget, setDeleteRegTarget] = useState<RegistrationItem | null>(null);
 
   const refresh = () => {
     authRequest<RegistrationItem[]>('/api/hr/employee-registrations')
@@ -4366,6 +4646,22 @@ function HRRegistrationsPage({
     } finally {
       setBusyId(null);
     }
+  };
+
+  const handleConfirmDeleteRegistration = async (confirmationWord: string) => {
+    if (!deleteRegTarget) return;
+    await ensureCsrf();
+    await authRequest(`/api/hr/users/${deleteRegTarget.id}/delete`, {
+      method: 'POST',
+      body: JSON.stringify({ confirmation: confirmationWord }),
+    });
+    if (setEmployees) {
+      setEmployees((prev) =>
+        prev.filter((e) => e.email.toLowerCase() !== deleteRegTarget.email.toLowerCase())
+      );
+    }
+    setMessage(`Registration for ${deleteRegTarget.name} has been permanently deleted.`);
+    refresh();
   };
 
   const filtered = registrations.filter((item) => {
@@ -4622,6 +4918,15 @@ function HRRegistrationsPage({
                           Activate
                         </Button>
                       )}
+                      <Button
+                        testId={`button-delete-registration-${item.id}`}
+                        variant="danger"
+                        className="px-2.5 text-xs"
+                        disabled={busyId === item.id}
+                        onClick={() => setDeleteRegTarget(item)}
+                      >
+                        <Trash2 size={13} /> Delete
+                      </Button>
                     </div>
                   </td>
                 </tr>
@@ -4762,6 +5067,16 @@ function HRRegistrationsPage({
           </div>
         )}
       </div>
+
+      <DeleteConfirmationModal
+        isOpen={!!deleteRegTarget}
+        title={`Delete registration: ${deleteRegTarget?.name}`}
+        accountName={deleteRegTarget?.name}
+        accountEmail={deleteRegTarget?.email}
+        accountRole="Registration"
+        onClose={() => setDeleteRegTarget(null)}
+        onConfirm={handleConfirmDeleteRegistration}
+      />
     </div>
   );
 }
@@ -4787,6 +5102,7 @@ function HRAccessPage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [deleteManagerTarget, setDeleteManagerTarget] = useState<ManagerAccessRequestItem | null>(null);
 
   const refresh = () =>
     authRequest<ManagerAccessRequestItem[]>('/api/hr/manager-access/requests')
@@ -4827,6 +5143,18 @@ function HRAccessPage() {
     } finally {
       setBusyId(null);
     }
+  };
+
+  const handleConfirmDeleteManager = async (confirmationWord: string) => {
+    if (!deleteManagerTarget) return;
+    const targetId = deleteManagerTarget.requesterUserId || deleteManagerTarget.id;
+    await ensureCsrf();
+    await authRequest(`/api/hr/users/${targetId}/delete`, {
+      method: 'POST',
+      body: JSON.stringify({ confirmation: confirmationWord }),
+    });
+    setMessage(`Manager account for ${deleteManagerTarget.requesterName || 'manager'} permanently deleted.`);
+    await refresh();
   };
 
   return (
@@ -4905,6 +5233,16 @@ function HRAccessPage() {
                         </Button>
                       </div>
                     )}
+                    {request.requesterUserId && (
+                      <Button
+                        testId={`button-delete-manager-${request.id}`}
+                        variant="danger"
+                        className="px-2.5 py-1.5 text-xs ml-2"
+                        onClick={() => setDeleteManagerTarget(request)}
+                      >
+                        <Trash2 size={13} /> Delete account
+                      </Button>
+                    )}
                   </div>
                 </div>
 
@@ -4961,6 +5299,16 @@ function HRAccessPage() {
           })
         )}
       </div>
+
+      <DeleteConfirmationModal
+        isOpen={!!deleteManagerTarget}
+        title={`Delete manager: ${deleteManagerTarget?.requesterName || `Request #${deleteManagerTarget?.id}`}`}
+        accountName={deleteManagerTarget?.requesterName || undefined}
+        accountEmail={deleteManagerTarget?.requesterEmail || undefined}
+        accountRole="Manager"
+        onClose={() => setDeleteManagerTarget(null)}
+        onConfirm={handleConfirmDeleteManager}
+      />
     </div>
   );
 }
@@ -5091,7 +5439,7 @@ function AppContent() {
     return <Shell role={role} setRole={setRole} onSignOut={signOut} currentUser={currentUser}>{component}</Shell>;
   };
 
-  return <Switch><Route path="/"><BackendSignIn setRole={setRole} onSignIn={signIn} /></Route><Route path="/employee/dashboard">{page(<EmployeeDashboard employees={employees} attendance={attendance} leaves={leaves} currentUser={currentUser} />)}</Route><Route path="/employee/attendance">{page(<EmployeeAttendance attendance={attendance} setAttendance={setAttendance} currentUser={currentUser} employees={employees} />)}</Route><Route path="/employee/leave">{page(<EmployeeLeave leaves={leaves} setLeaves={setLeaves} currentUser={currentUser} employees={employees} />)}</Route><Route path="/employee/profile">{page(<EmployeeProfile role={role} employees={employees} setEmployees={setEmployees} currentUser={currentUser} />)}</Route><Route path="/manager/dashboard">{page(<ManagerDashboard leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/manager/leave-review">{page(<ManagerLeaveReview leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/hr/dashboard">{hrPage(<HRDashboard employees={employees} attendance={attendance} leaves={leaves} />)}</Route><Route path="/hr/registrations">{hrPage(<HRRegistrationsPage setEmployees={setEmployees} />)}</Route><Route path="/hr/employees">{hrPage(<HREmployees employees={employees} setEmployees={setEmployees} />)}</Route><Route path="/hr/access">{hrPage(<HRAccessPage />)}</Route><Route path="/hr/leave-requests">{hrPage(<HRLeaveRequests leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/hr/attendance">{hrPage(<HRAttendance attendance={attendance} employees={employees} />)}</Route><Route path="/hr/reports">{hrPage(<HRReports attendance={attendance} leaves={leaves} />)}</Route><Route path="/settings">{page(<SettingsPage role={role} />)}</Route><Route><BackendSignIn setRole={setRole} onSignIn={signIn} /></Route></Switch>;
+  return <Switch><Route path="/"><BackendSignIn setRole={setRole} onSignIn={signIn} /></Route><Route path="/employee/dashboard">{page(<EmployeeDashboard employees={employees} attendance={attendance} leaves={leaves} currentUser={currentUser} />)}</Route><Route path="/employee/attendance">{page(<EmployeeAttendance attendance={attendance} setAttendance={setAttendance} currentUser={currentUser} employees={employees} />)}</Route><Route path="/employee/leave">{page(<EmployeeLeave leaves={leaves} setLeaves={setLeaves} currentUser={currentUser} employees={employees} />)}</Route><Route path="/employee/profile">{page(<EmployeeProfile role={role} employees={employees} setEmployees={setEmployees} currentUser={currentUser} />)}</Route><Route path="/manager/dashboard">{page(<ManagerDashboard leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/manager/leave-review">{page(<ManagerLeaveReview leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/hr/dashboard">{hrPage(<HRDashboard employees={employees} attendance={attendance} leaves={leaves} />)}</Route><Route path="/hr/registrations">{hrPage(<HRRegistrationsPage setEmployees={setEmployees} />)}</Route><Route path="/hr/employees">{hrPage(<HREmployees employees={employees} setEmployees={setEmployees} />)}</Route><Route path="/hr/access">{hrPage(<HRAccessPage />)}</Route><Route path="/hr/leave-requests">{hrPage(<HRLeaveRequests leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/hr/attendance">{hrPage(<HRAttendance attendance={attendance} employees={employees} />)}</Route><Route path="/hr/reports">{hrPage(<HRReports attendance={attendance} leaves={leaves} />)}</Route><Route path="/settings">{page(<SettingsPage role={role} currentUser={currentUser} setEmployees={setEmployees} />)}</Route><Route><BackendSignIn setRole={setRole} onSignIn={signIn} /></Route></Switch>;
 }
 function Router() { return <ErrorBoundary resetKey={window.location.pathname}><AppContent /></ErrorBoundary>; }
 function App() { return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><Router /></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>; }
