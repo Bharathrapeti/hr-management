@@ -8,6 +8,12 @@ export type AuthUser = {
   effectiveRoles?: string[];
   permissions?: string[];
   employeeId?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  jobRole?: string | null;
+  age?: number | null;
+  gender?: string | null;
+  resumeFileName?: string | null;
 };
 export type AuthMessage = { message: string };
 

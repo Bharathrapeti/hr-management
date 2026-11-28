@@ -561,6 +561,43 @@ test('CSRF lifecycle and synchronization regression tests', async (t) => {
     assert.deepEqual(deletedTargets, ['employee-15', 'manager-22']);
   });
 
+  await t.test('HR account deletion accepts string employee-id and email identifiers', async () => {
+    setInMemoryCsrfToken('mock-csrf-token');
+    const deletedTargets: string[] = [];
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      const path = url.toString();
+      assert.equal(init?.method, 'POST');
+      const body = JSON.parse((init?.body as string) || '{}');
+      assert.equal(body.confirmation, 'Delete');
+      if (path.includes('/api/hr/employees/EMP-1042/delete')) {
+        deletedTargets.push('EMP-1042');
+        return new Response(JSON.stringify({ message: 'User account permanently deleted.' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (path.includes('/api/hr/employees/maya.chen%40northstar.edu/delete')) {
+        deletedTargets.push('maya.chen@northstar.edu');
+        return new Response(JSON.stringify({ message: 'User account permanently deleted.' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      throw new Error(`Unexpected url: ${path}`);
+    }) as typeof fetch;
+
+    await authRequest('/api/hr/employees/EMP-1042/delete', {
+      method: 'POST',
+      body: JSON.stringify({ confirmation: 'Delete' }),
+    });
+    await authRequest('/api/hr/employees/maya.chen%40northstar.edu/delete', {
+      method: 'POST',
+      body: JSON.stringify({ confirmation: 'Delete' }),
+    });
+
+    assert.deepEqual(deletedTargets, ['EMP-1042', 'maya.chen@northstar.edu']);
+  });
+
   await t.test('HR employee deactivation and activation endpoints', async () => {
     setInMemoryCsrfToken('mock-csrf-token');
     const actionsCalled: string[] = [];
@@ -642,5 +679,190 @@ test('CSRF lifecycle and synchronization regression tests', async (t) => {
     assert.equal(requests[0].requestType, 'Manager Access Request');
     assert.equal(requests[0].reviewReason, 'Leading team coordinates');
     assert.equal(requests[0].status, 'PENDING');
+  });
+
+  await t.test('HR managers directory listing, team assignment, and permission scopes', async () => {
+    setInMemoryCsrfToken('mock-csrf-token');
+    const calledEndpoints: string[] = [];
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      const path = url.toString();
+      calledEndpoints.push(`${init?.method || 'GET'} ${path}`);
+
+      if (path.endsWith('/api/hr/managers') && (!init?.method || init.method === 'GET')) {
+        return new Response(
+          JSON.stringify([
+            {
+              id: 40,
+              name: 'Jon Bell',
+              email: 'jon.bell@northstar.edu',
+              role: 'EMPLOYEE',
+              status: 'ACTIVE',
+              employeeId: 'EMP-1037',
+              assignedCount: 2,
+              permissions: ['VIEW_ASSIGNED_EMPLOYEES', 'REVIEW_ASSIGNED_LEAVE'],
+            },
+          ]),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+
+      if (path.endsWith('/api/hr/managers') && init?.method === 'POST') {
+        const body = JSON.parse((init?.body as string) || '{}');
+        assert.equal(body.name, 'Elena Rostova');
+        assert.equal(body.email, 'elena.rostova@northstar.edu');
+        return new Response(JSON.stringify({ message: 'Manager profile configured.' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (path.includes('/api/hr/managers/40/assignments') && init?.method === 'POST') {
+        const body = JSON.parse((init?.body as string) || '{}');
+        assert.equal(body.employeeId, 15);
+        return new Response(JSON.stringify({ message: 'Employee assigned to manager.' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (path.includes('/api/hr/managers/40/permissions') && init?.method === 'POST') {
+        const body = JSON.parse((init?.body as string) || '{}');
+        assert.equal(body.permission, 'VIEW_ASSIGNED_ATTENDANCE');
+        return new Response(JSON.stringify({ message: 'Manager permission granted.' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      throw new Error(`Unexpected url: ${path}`);
+    }) as typeof fetch;
+
+    const list = await authRequest<any[]>('/api/hr/managers');
+    assert.equal(list.length, 1);
+    assert.equal(list[0].name, 'Jon Bell');
+    assert.equal(list[0].assignedCount, 2);
+    assert.deepEqual(list[0].permissions, ['VIEW_ASSIGNED_EMPLOYEES', 'REVIEW_ASSIGNED_LEAVE']);
+
+    const createRes = await authRequest<{ message: string }>('/api/hr/managers', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'Elena Rostova', email: 'elena.rostova@northstar.edu', department: 'Operations' }),
+    });
+    assert.equal(createRes.message, 'Manager profile configured.');
+
+    const assignRes = await authRequest<{ message: string }>('/api/hr/managers/40/assignments', {
+      method: 'POST',
+      body: JSON.stringify({ employeeId: 15 }),
+    });
+    assert.equal(assignRes.message, 'Employee assigned to manager.');
+
+    const permRes = await authRequest<{ message: string }>('/api/hr/managers/40/permissions', {
+      method: 'POST',
+      body: JSON.stringify({ permission: 'VIEW_ASSIGNED_ATTENDANCE' }),
+    });
+    assert.equal(permRes.message, 'Manager permission granted.');
+  });
+
+  await t.test('Employee and Manager signup submits complete profile details and resume payload', async () => {
+    setInMemoryCsrfToken('mock-csrf-token');
+    const receivedBodies: any[] = [];
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      const path = url.toString();
+      if (path.endsWith('/api/auth/signup') && init?.method === 'POST') {
+        const body = JSON.parse((init?.body as string) || '{}');
+        receivedBodies.push(body);
+        return new Response(JSON.stringify({ message: 'Verification OTP sent if SMTP is configured.' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      throw new Error(`Unexpected endpoint: ${path}`);
+    }) as typeof fetch;
+
+    // Test Employee signup payload
+    const empPayload = {
+      name: 'Alex Rawles',
+      firstName: 'Alex',
+      lastName: 'Rawles',
+      email: 'alex.rawles@northstar.edu',
+      password: 'Password123!',
+      confirmPassword: 'Password123!',
+      accountType: 'EMPLOYEE',
+      jobRole: 'Software Developer',
+      age: 26,
+      gender: 'Male',
+      resumeFileName: 'alex_rawles_resume.pdf',
+      resumeContentType: 'application/pdf',
+      resumeFileSize: 1048576,
+      resumeData: 'data:application/pdf;base64,JVBERi0xLjQK...',
+    };
+
+    const empRes = await authRequest<{ message: string }>('/api/auth/signup', {
+      method: 'POST',
+      body: JSON.stringify(empPayload),
+    });
+    assert.equal(empRes.message, 'Verification OTP sent if SMTP is configured.');
+
+    // Test Manager signup payload
+    const mgrPayload = {
+      name: 'Sarah Connor',
+      firstName: 'Sarah',
+      lastName: 'Connor',
+      email: 'sarah.connor@northstar.edu',
+      password: 'Password123!',
+      confirmPassword: 'Password123!',
+      accountType: 'MANAGER',
+      jobRole: 'Operations Manager',
+      age: 34,
+      gender: 'Female',
+      resumeFileName: 'sarah_connor_cv.pdf',
+      resumeContentType: 'application/pdf',
+      resumeFileSize: 2097152,
+      resumeData: 'data:application/pdf;base64,JVBERi0xLjQK...',
+    };
+
+    const mgrRes = await authRequest<{ message: string }>('/api/auth/signup', {
+      method: 'POST',
+      body: JSON.stringify(mgrPayload),
+    });
+    assert.equal(mgrRes.message, 'Verification OTP sent if SMTP is configured.');
+
+    assert.equal(receivedBodies.length, 2);
+    assert.equal(receivedBodies[0].firstName, 'Alex');
+    assert.equal(receivedBodies[0].lastName, 'Rawles');
+    assert.equal(receivedBodies[0].jobRole, 'Software Developer');
+    assert.equal(receivedBodies[0].age, 26);
+    assert.equal(receivedBodies[0].gender, 'Male');
+    assert.equal(receivedBodies[0].resumeFileName, 'alex_rawles_resume.pdf');
+
+    assert.equal(receivedBodies[1].firstName, 'Sarah');
+    assert.equal(receivedBodies[1].lastName, 'Connor');
+    assert.equal(receivedBodies[1].accountType, 'MANAGER');
+    assert.equal(receivedBodies[1].jobRole, 'Operations Manager');
+    assert.equal(receivedBodies[1].age, 34);
+    assert.equal(receivedBodies[1].gender, 'Female');
+    assert.equal(receivedBodies[1].resumeFileName, 'sarah_connor_cv.pdf');
+  });
+
+  await t.test('HR and Employee resume retrieval endpoint integration', async () => {
+    setInMemoryCsrfToken('mock-csrf-token');
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const path = url.toString();
+      if (path.includes('/api/hr/users/55/resume') || path.includes('/api/auth/users/55/resume')) {
+        return new Response(new Uint8Array([0x25, 0x50, 0x44, 0x46]), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': 'inline; filename="alex_rawles_resume.pdf"',
+          },
+        });
+      }
+      throw new Error(`Unexpected endpoint: ${path}`);
+    }) as typeof fetch;
+
+    const res = await fetch('http://localhost:8080/api/hr/users/55/resume');
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('Content-Type'), 'application/pdf');
+    const disposition = res.headers.get('Content-Disposition');
+    assert.ok(disposition?.includes('alex_rawles_resume.pdf'));
   });
 });

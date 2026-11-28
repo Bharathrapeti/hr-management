@@ -74,6 +74,10 @@ type PersonalDetails = {
   mobileNumber: string | null;
   role: string;
   status: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  jobRole?: string | null;
+  resumeFileName?: string | null;
 };
 
 type CorrectionRequest = {
@@ -106,6 +110,18 @@ type BackendUser = {
   role: string;
   status: string;
   employeeId?: string | null;
+};
+
+type ManagerSummary = {
+  id: number | string;
+  name: string;
+  email: string;
+  employeeId?: string | null;
+  department?: string;
+  role: string;
+  status: Status;
+  assignedCount: number;
+  permissions: string[];
 };
 
 function computeAge(dobStr: string | null | undefined): number | null {
@@ -152,6 +168,42 @@ const seedEmployees: Employee[] = [
   { id: 'EMP-1037', name: 'Jon Bell', email: 'jon.bell@northstar.edu', phone: '+1 (415) 555-0158', department: 'Admissions', designation: 'Admissions Specialist', joiningDate: '2022-04-11', status: 'Active' },
   { id: 'EMP-1028', name: 'Priya Nair', email: 'priya.nair@northstar.edu', phone: '+1 (415) 555-0114', department: 'Academic Affairs', designation: 'Department Assistant', joiningDate: '2021-09-06', status: 'Active' },
   { id: 'EMP-0991', name: 'Elliot Hart', email: 'elliot.hart@northstar.edu', phone: '+1 (415) 555-0132', department: 'Library Services', designation: 'Library Associate', joiningDate: '2020-01-20', status: 'Inactive' },
+];
+
+const seedManagers: ManagerSummary[] = [
+  {
+    id: 101,
+    name: 'Jon Bell',
+    email: 'jon.bell@northstar.edu',
+    employeeId: 'EMP-1037',
+    department: 'Admissions',
+    role: 'Admissions Manager',
+    status: 'Active',
+    assignedCount: 2,
+    permissions: ['VIEW_ASSIGNED_EMPLOYEES', 'REVIEW_ASSIGNED_LEAVE', 'VIEW_ASSIGNED_ATTENDANCE', 'UPDATE_ASSIGNED_EMPLOYEE_PROFILE'],
+  },
+  {
+    id: 102,
+    name: 'Marcus Vance',
+    email: 'marcus.vance@northstar.edu',
+    employeeId: 'EMP-1044',
+    department: 'Student Services',
+    role: 'Student Services Lead',
+    status: 'Active',
+    assignedCount: 1,
+    permissions: ['VIEW_ASSIGNED_EMPLOYEES', 'REVIEW_ASSIGNED_LEAVE', 'VIEW_ASSIGNED_ATTENDANCE'],
+  },
+  {
+    id: 103,
+    name: 'Elena Rostova',
+    email: 'elena.rostova@northstar.edu',
+    employeeId: 'EMP-1045',
+    department: 'Operations',
+    role: 'Operations Manager',
+    status: 'Inactive',
+    assignedCount: 0,
+    permissions: ['VIEW_ASSIGNED_EMPLOYEES'],
+  },
 ];
 const seedAttendance: Attendance[] = [
   { employeeId: 'EMP-1042', workDate: today, checkIn: '08:47', checkOut: '', status: 'Present', workingHours: '—' },
@@ -579,7 +631,12 @@ function DeleteConfirmationModal({
       await onConfirm('Delete');
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to complete account deletion.');
+      const msg = err instanceof Error ? err.message : 'Unable to complete account deletion.';
+      setError(
+        msg === 'Not Found'
+          ? 'Unable to reach the deletion endpoint. Please verify the backend service is running and updated.'
+          : msg
+      );
     } finally {
       setBusy(false);
     }
@@ -822,11 +879,11 @@ function Shell({ role, setRole, onSignOut, currentUser, children }: { role: Role
     { href: '/hr/dashboard', label: 'Overview', icon: LayoutDashboard },
     { href: '/hr/registrations', label: 'Registrations', icon: UserCheck },
     { href: '/hr/employees', label: 'Employees', icon: Users },
+    { href: '/hr/managers', label: 'Managers', icon: UserCog },
     { href: '/hr/access', label: 'Access control', icon: ShieldCheck },
     { href: '/hr/leave-requests', label: 'Leave requests', icon: FileText },
     { href: '/hr/attendance', label: 'Attendance', icon: CalendarCheck2 },
-    { href: '/hr/reports', label: 'Reports', icon: BarChart3 },
-    { href: '/employee/profile', label: 'My profile', icon: UserRound }
+    { href: '/hr/reports', label: 'Reports', icon: BarChart3 }
   ];
   const managerNav = [
     { href: '/manager/dashboard', label: 'Assigned employees', icon: Users },
@@ -897,7 +954,27 @@ function Shell({ role, setRole, onSignOut, currentUser, children }: { role: Role
     <div className="lg:pl-[252px]">
       <header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-border/80 bg-background/90 px-5 backdrop-blur-md md:px-8">
         <button data-testid="button-open-menu" onClick={() => setMenuOpen(true)} className="rounded-lg p-2 text-muted-foreground hover:bg-muted lg:hidden"><Menu size={21} /></button>
-        <div className="hidden text-sm text-muted-foreground lg:block">{role === 'hr' ? 'People operations / Overview' : role === 'manager' ? 'Manager workspace / Assigned employees' : 'Employee workspace / Overview'}</div>
+        <div className="hidden text-sm text-muted-foreground lg:block">
+          {role === 'hr'
+            ? location === '/hr/managers'
+              ? 'People operations / Managers'
+              : location === '/hr/employees'
+              ? 'People operations / Employees'
+              : location === '/hr/registrations'
+              ? 'People operations / Registrations'
+              : location === '/hr/access'
+              ? 'People operations / Access control'
+              : location === '/hr/leave-requests'
+              ? 'People operations / Leave requests'
+              : location === '/hr/attendance'
+              ? 'People operations / Attendance'
+              : location === '/hr/reports'
+              ? 'People operations / Reports'
+              : 'People operations / Overview'
+            : role === 'manager'
+            ? 'Manager workspace / Assigned employees'
+            : 'Employee workspace / Overview'}
+        </div>
         <div className="ml-auto flex items-center gap-3">
           <div className="hidden items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground sm:flex"><span className="h-2 w-2 rounded-full bg-emerald-500" /> Backend session</div>
           <button data-testid="button-notifications" onClick={() => window.alert('No new notifications in this local demo.')} className="relative rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"><Bell size={19} /><span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-accent" /></button>
@@ -1154,7 +1231,25 @@ function BackendSignIn({ setRole, onSignIn }: { setRole: (role: Role) => void; o
   const [step, setStep] = useState<'form' | 'otp'>('form');
   const [loginType, setLoginType] = useState<'EMPLOYEE' | 'HR' | 'MANAGER'>('EMPLOYEE');
   const [signupType, setSignupType] = useState<'EMPLOYEE' | 'MANAGER'>('EMPLOYEE');
-  const [form, setForm] = useState({ name: '', email: '', password: '', confirmPassword: '', otp: '' });
+  const [form, setForm] = useState({
+    name: '',
+    firstName: '',
+    lastName: '',
+    email: '',
+    password: '',
+    confirmPassword: '',
+    jobRole: '',
+    age: '',
+    gender: 'Male',
+    otp: '',
+  });
+  const [resume, setResume] = useState<{
+    fileName: string;
+    contentType: string;
+    fileSize: number;
+    dataUrl: string;
+  } | null>(null);
+  const [resumeError, setResumeError] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [cooldown, setCooldown] = useState(0);
@@ -1169,6 +1264,39 @@ function BackendSignIn({ setRole, onSignIn }: { setRole: (role: Role) => void; o
 
   const update = (key: keyof typeof form, value: string) => setForm((current) => ({ ...current, [key]: value }));
   const showError = (error: unknown) => setMessage(error instanceof Error ? error.message : 'Authentication request failed.');
+
+  const handleResumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setResumeError('');
+    if (file.size > 10 * 1024 * 1024) {
+      setResumeError('Resume file size must not exceed 10MB.');
+      e.target.value = '';
+      return;
+    }
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    const allowedExts = ['pdf', 'doc', 'docx'];
+    if (ext && !allowedExts.includes(ext)) {
+      setResumeError('Please upload a PDF or DOC/DOCX document.');
+      e.target.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      setResume({
+        fileName: file.name,
+        contentType: file.type || 'application/pdf',
+        fileSize: file.size,
+        dataUrl,
+      });
+    };
+    reader.onerror = () => {
+      setResumeError('Failed to read selected resume file.');
+    };
+    reader.readAsDataURL(file);
+  };
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (busy) return;
@@ -1190,13 +1318,68 @@ function BackendSignIn({ setRole, onSignIn }: { setRole: (role: Role) => void; o
         setRole(user.role === 'HR_ADMIN' ? 'hr' : effectiveManager ? 'manager' : 'employee');
         setLocation(user.role === 'HR_ADMIN' ? '/hr/dashboard' : effectiveManager ? '/manager/dashboard' : '/employee/dashboard');
       } else if (mode === 'signup' && step === 'form') {
+        const first = form.firstName.trim();
+        const last = form.lastName.trim();
+        const fullName = `${first} ${last}`.trim() || form.name.trim();
+        if (!first) {
+          setMessage('First name is required.');
+          setBusy(false);
+          return;
+        }
+        if (!last) {
+          setMessage('Last name is required.');
+          setBusy(false);
+          return;
+        }
+        if (!form.jobRole.trim()) {
+          setMessage('Job role / designation is required.');
+          setBusy(false);
+          return;
+        }
+        if (!form.age) {
+          setMessage('Age is required.');
+          setBusy(false);
+          return;
+        }
+        const ageNum = parseInt(form.age, 10);
+        if (isNaN(ageNum) || ageNum < 18 || ageNum > 99) {
+          setMessage('Age must be between 18 and 99.');
+          setBusy(false);
+          return;
+        }
+        if (!form.password || form.password.length < 8) {
+          setMessage('Password must be at least 8 characters long.');
+          setBusy(false);
+          return;
+        }
+        if (form.password !== form.confirmPassword) {
+          setMessage('Passwords do not match.');
+          setBusy(false);
+          return;
+        }
+        if (!resume) {
+          setMessage('Please upload your resume before submitting.');
+          setBusy(false);
+          return;
+        }
+
         await authRequest<AuthMessage>('/api/auth/signup', {
           method: 'POST',
           body: JSON.stringify({
-            name: form.name,
-            email: form.email,
+            name: fullName,
+            firstName: first,
+            lastName: last,
+            email: form.email.trim(),
             password: form.password,
+            confirmPassword: form.confirmPassword,
             accountType: signupType,
+            jobRole: form.jobRole.trim(),
+            age: ageNum,
+            gender: form.gender,
+            resumeFileName: resume.fileName,
+            resumeContentType: resume.contentType,
+            resumeFileSize: resume.fileSize,
+            resumeData: resume.dataUrl,
           }),
         });
         setStep('otp');
@@ -1219,7 +1402,7 @@ function BackendSignIn({ setRole, onSignIn }: { setRole: (role: Role) => void; o
               ? 'Email verified successfully. Your manager registration is pending HR administrator approval before you can sign in.'
               : 'Email verified successfully. Your account is pending HR administrator approval before you can sign in.')
         );
-        setForm((current) => ({ ...current, password: '', otp: '' }));
+        setForm((current) => ({ ...current, password: '', confirmPassword: '', otp: '' }));
       } else if (step === 'form') {
         await authRequest<AuthMessage>(
           '/api/auth/password/forgot',
@@ -1266,7 +1449,22 @@ function BackendSignIn({ setRole, onSignIn }: { setRole: (role: Role) => void; o
       await ensureCsrf();
       const path = mode === 'signup' ? '/api/auth/signup' : '/api/auth/password/forgot';
       const body = mode === 'signup'
-        ? { name: form.name, email: form.email, password: form.password, accountType: signupType }
+        ? {
+            name: `${form.firstName.trim()} ${form.lastName.trim()}`.trim() || form.name.trim(),
+            firstName: form.firstName.trim() || undefined,
+            lastName: form.lastName.trim() || undefined,
+            email: form.email.trim(),
+            password: form.password,
+            confirmPassword: form.confirmPassword,
+            accountType: signupType,
+            jobRole: form.jobRole.trim() || undefined,
+            age: form.age ? parseInt(form.age, 10) : undefined,
+            gender: form.gender,
+            resumeFileName: resume?.fileName,
+            resumeContentType: resume?.contentType,
+            resumeFileSize: resume?.fileSize,
+            resumeData: resume?.dataUrl,
+          }
         : { email: form.email };
       await authRequest<AuthMessage>(path, { method: 'POST', body: JSON.stringify(body) }, mode === 'reset');
       setCooldown(60);
@@ -1287,28 +1485,226 @@ function BackendSignIn({ setRole, onSignIn }: { setRole: (role: Role) => void; o
     : 'Verify your email before setting a new password.';
   return <div className="grain min-h-[100dvh] bg-[#eff4f0]"><div className="mx-auto grid min-h-[100dvh] max-w-[1440px] lg:grid-cols-[1.05fr_.95fr]">
     <div className="relative hidden overflow-hidden bg-sidebar p-10 lg:flex lg:flex-col lg:justify-between"><div><LogoMark /><div className="mt-28 max-w-lg"><div className="mono mb-5 text-xs font-bold uppercase tracking-[.2em] text-sidebar-primary">A better rhythm for work</div><h1 className="text-6xl font-bold leading-[.96] tracking-[-.065em] text-white">Every hour,<br /><span className="text-sidebar-primary">accounted for.</span></h1><p className="mt-7 max-w-md text-base leading-7 text-slate-400">A clear, human way to keep attendance, leave, and people records moving together.</p></div></div><div className="flex items-center justify-between text-xs text-slate-500"><span>Meridian HR</span><span className="flex items-center gap-2"><ShieldCheck size={14} /> Private by design</span></div></div>
-    <div className="flex items-center justify-center p-6 sm:p-12"><div className="w-full max-w-[440px]"><div className="mb-12 lg:hidden"><LogoMark /></div><div className="mb-9"><Badge tone="info"><Activity size={12} /> Secure sign in</Badge><h2 className="mt-5 text-3xl font-bold tracking-[-.04em]">{title}</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">{detail}</p></div>
+    <div className="flex items-center justify-center p-6 sm:p-12"><div className={cx('w-full transition-all', mode === 'signup' && step === 'form' ? 'max-w-[490px]' : 'max-w-[440px]')}><div className="mb-12 lg:hidden"><LogoMark /></div><div className="mb-8"><Badge tone="info"><Activity size={12} /> Secure sign in</Badge><h2 className="mt-5 text-3xl font-bold tracking-[-.04em]">{title}</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">{detail}</p></div>
       <form onSubmit={submit} className="space-y-4">
         {mode === 'login' && <label className="block text-sm font-medium">Sign in as<select data-testid="select-login-type" value={loginType} onChange={(event) => setLoginType(event.target.value as 'EMPLOYEE' | 'HR' | 'MANAGER')} className="mt-2 h-11 w-full rounded-lg border border-input bg-card px-3 text-sm outline-none focus:border-primary"><option value="EMPLOYEE">Employee</option><option value="HR">HR administrator</option><option value="MANAGER">Manager</option></select></label>}
         {mode === 'signup' && step === 'form' && (
           <label className="block text-sm font-medium">
-            Create account as
+            Account type
             <select
               data-testid="select-signup-account-type"
               value={signupType}
               onChange={(event) => setSignupType(event.target.value as 'EMPLOYEE' | 'MANAGER')}
-              className="mt-2 h-11 w-full rounded-lg border border-input bg-card px-3 text-sm outline-none focus:border-primary"
+              className="mt-1.5 h-10 w-full rounded-lg border border-input bg-card px-3 text-sm outline-none focus:border-primary"
             >
               <option value="EMPLOYEE">Employee</option>
               <option value="MANAGER">Manager</option>
             </select>
           </label>
         )}
-        {mode === 'signup' && step === 'form' && <label className="block text-sm font-medium">Full name<input required value={form.name} onChange={(event) => update('name', event.target.value)} className="mt-2 h-11 w-full rounded-lg border border-input bg-card px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" /></label>}
-        <label className="block text-sm font-medium">Email address<input required type="email" autoComplete="email" value={form.email} onChange={(event) => update('email', event.target.value)} placeholder="you@northstar.edu" className="mt-2 h-11 w-full rounded-lg border border-input bg-card px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" /></label>
-        {step === 'otp' && <label className="block text-sm font-medium">Verification code<input required inputMode="numeric" pattern="[0-9]{6}" maxLength={6} value={form.otp} onChange={(event) => update('otp', event.target.value)} placeholder="6-digit code" className="mt-2 h-11 w-full rounded-lg border border-input bg-card px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" /></label>}
-        {(mode === 'login' || (mode === 'signup' && step === 'form') || (mode === 'reset' && step === 'otp')) && <label className="block text-sm font-medium">{mode === 'reset' ? 'New password' : 'Password'}<input required type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} minLength={mode !== 'login' ? 8 : undefined} value={form.password} onChange={(event) => update('password', event.target.value)} placeholder="At least 8 characters" className="mt-2 h-11 w-full rounded-lg border border-input bg-card px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" /></label>}
-        {mode === 'reset' && step === 'otp' && <label className="block text-sm font-medium">Confirm new password<input required type="password" autoComplete="new-password" minLength={8} value={form.confirmPassword} onChange={(event) => update('confirmPassword', event.target.value)} className="mt-2 h-11 w-full rounded-lg border border-input bg-card px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" /></label>}
+        {mode === 'signup' && step === 'form' && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="block text-sm font-medium">
+              First name *
+              <input
+                data-testid="input-signup-first-name"
+                required
+                value={form.firstName}
+                onChange={(event) => update('firstName', event.target.value)}
+                placeholder="e.g. Maya"
+                className="mt-1.5 h-10 w-full rounded-lg border border-input bg-card px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+              />
+            </label>
+            <label className="block text-sm font-medium">
+              Last name *
+              <input
+                data-testid="input-signup-last-name"
+                required
+                value={form.lastName}
+                onChange={(event) => update('lastName', event.target.value)}
+                placeholder="e.g. Chen"
+                className="mt-1.5 h-10 w-full rounded-lg border border-input bg-card px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+              />
+            </label>
+          </div>
+        )}
+        <label className="block text-sm font-medium">Email address *<input required type="email" autoComplete="email" value={form.email} onChange={(event) => update('email', event.target.value)} placeholder={signupType === 'MANAGER' && mode === 'signup' ? 'manager@northstar.edu' : 'you@northstar.edu'} className="mt-1.5 h-10 w-full rounded-lg border border-input bg-card px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" /></label>
+        {mode === 'signup' && step === 'form' && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="block text-sm font-medium">
+              Job role / Designation *
+              <input
+                data-testid="input-signup-job-role"
+                required
+                value={form.jobRole}
+                onChange={(event) => update('jobRole', event.target.value)}
+                placeholder={signupType === 'MANAGER' ? 'e.g. Operations Manager' : 'e.g. Software Developer'}
+                className="mt-1.5 h-10 w-full rounded-lg border border-input bg-card px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+              />
+            </label>
+            <label className="block text-sm font-medium">
+              Age *
+              <input
+                data-testid="input-signup-age"
+                required
+                type="number"
+                min={18}
+                max={99}
+                value={form.age}
+                onChange={(event) => update('age', event.target.value)}
+                placeholder="18 - 99"
+                className="mt-1.5 h-10 w-full rounded-lg border border-input bg-card px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+              />
+            </label>
+          </div>
+        )}
+        {mode === 'signup' && step === 'form' && (
+          <div>
+            <span className="block text-sm font-medium mb-1.5">Gender *</span>
+            <div className="grid grid-cols-2 gap-3">
+              <label className={cx(
+                'flex items-center gap-2.5 rounded-lg border p-2.5 cursor-pointer text-sm font-medium transition-all',
+                form.gender === 'Male' ? 'border-primary bg-primary/5 text-primary' : 'border-input bg-card text-muted-foreground hover:text-foreground'
+              )}>
+                <input
+                  type="radio"
+                  name="gender"
+                  value="Male"
+                  checked={form.gender === 'Male'}
+                  onChange={() => update('gender', 'Male')}
+                  className="accent-primary"
+                />
+                Male
+              </label>
+              <label className={cx(
+                'flex items-center gap-2.5 rounded-lg border p-2.5 cursor-pointer text-sm font-medium transition-all',
+                form.gender === 'Female' ? 'border-primary bg-primary/5 text-primary' : 'border-input bg-card text-muted-foreground hover:text-foreground'
+              )}>
+                <input
+                  type="radio"
+                  name="gender"
+                  value="Female"
+                  checked={form.gender === 'Female'}
+                  onChange={() => update('gender', 'Female')}
+                  className="accent-primary"
+                />
+                Female
+              </label>
+            </div>
+          </div>
+        )}
+        {mode === 'signup' && step === 'form' ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="block text-sm font-medium">
+              Password *
+              <input
+                data-testid="input-signup-password"
+                required
+                type="password"
+                autoComplete="new-password"
+                minLength={8}
+                value={form.password}
+                onChange={(event) => update('password', event.target.value)}
+                placeholder="Min 8 characters"
+                className="mt-1.5 h-10 w-full rounded-lg border border-input bg-card px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+              />
+            </label>
+            <label className="block text-sm font-medium">
+              Confirm password *
+              <input
+                data-testid="input-signup-confirm-password"
+                required
+                type="password"
+                autoComplete="new-password"
+                minLength={8}
+                value={form.confirmPassword}
+                onChange={(event) => update('confirmPassword', event.target.value)}
+                placeholder="Re-enter password"
+                className="mt-1.5 h-10 w-full rounded-lg border border-input bg-card px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+              />
+            </label>
+          </div>
+        ) : (
+          (mode === 'login' || (mode === 'reset' && step === 'otp')) && (
+            <label className="block text-sm font-medium">
+              {mode === 'reset' ? 'New password' : 'Password'}
+              <input
+                required
+                type="password"
+                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                minLength={mode !== 'login' ? 8 : undefined}
+                value={form.password}
+                onChange={(event) => update('password', event.target.value)}
+                placeholder="At least 8 characters"
+                className="mt-1.5 h-10 w-full rounded-lg border border-input bg-card px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+              />
+            </label>
+          )
+        )}
+        {mode === 'reset' && step === 'otp' && (
+          <label className="block text-sm font-medium">
+            Confirm new password
+            <input
+              required
+              type="password"
+              autoComplete="new-password"
+              minLength={8}
+              value={form.confirmPassword}
+              onChange={(event) => update('confirmPassword', event.target.value)}
+              className="mt-1.5 h-10 w-full rounded-lg border border-input bg-card px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+            />
+          </label>
+        )}
+        {mode === 'signup' && step === 'form' && (
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="block text-sm font-medium">Resume (PDF, DOC, DOCX - max 10MB) *</span>
+              {resume && (
+                <span className="text-xs text-emerald-600 font-semibold flex items-center gap-1">
+                  <Check size={12} /> Ready
+                </span>
+              )}
+            </div>
+            {!resume ? (
+              <label
+                data-testid="dropzone-signup-resume"
+                className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-input hover:border-primary bg-card/60 hover:bg-card/90 p-3.5 transition-colors cursor-pointer text-center group"
+              >
+                <UploadCloud size={24} className="text-muted-foreground group-hover:text-primary transition-colors mb-1.5" />
+                <span className="text-xs font-semibold text-foreground">Click to upload your resume</span>
+                <span className="text-[11px] text-muted-foreground mt-0.5">Supports PDF or DOCX up to 10MB</span>
+                <input
+                  data-testid="input-signup-resume-file"
+                  type="file"
+                  accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  className="hidden"
+                  onChange={handleResumeChange}
+                />
+              </label>
+            ) : (
+              <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50/70 dark:bg-emerald-950/30 p-2.5">
+                <div className="flex items-center gap-2.5 overflow-hidden">
+                  <FileText size={18} className="text-emerald-700 shrink-0" />
+                  <div className="truncate">
+                    <p className="text-xs font-bold text-foreground truncate" data-testid="text-resume-filename">{resume.fileName}</p>
+                    <p className="text-[11px] text-muted-foreground">{(resume.fileSize / 1024).toFixed(1)} KB</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  data-testid="button-remove-resume"
+                  onClick={() => setResume(null)}
+                  className="p-1 text-muted-foreground hover:text-rose-600 transition-colors"
+                  title="Remove resume"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            )}
+            {resumeError && <p className="text-xs text-rose-600 font-medium">{resumeError}</p>}
+          </div>
+        )}
+        {step === 'otp' && <label className="block text-sm font-medium">Verification code<input required inputMode="numeric" pattern="[0-9]{6}" maxLength={6} value={form.otp} onChange={(event) => update('otp', event.target.value)} placeholder="6-digit code" className="mt-1.5 h-10 w-full rounded-lg border border-input bg-card px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" /></label>}
         <button disabled={busy} type="submit" className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none">{busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : step === 'otp' ? 'Verify code' : mode === 'signup' ? 'Create account' : 'Send reset code'} <ArrowRight size={16} /></button>
         {message && <p role="alert" className={cx('text-xs font-semibold', message.includes('successfully') || message.includes('updated') ? 'text-emerald-700' : 'text-rose-700')}>{message}</p>}
       </form>
@@ -2778,6 +3174,40 @@ function EmployeeProfile({ role, employees, setEmployees, currentUser }: { role?
                 </div>
               )}
             </div>
+
+            {/* Job Role / Designation */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                Job Role / Designation
+              </label>
+              <div
+                data-testid="text-profile-job-role"
+                className="h-12 w-full rounded-xl px-4 flex items-center text-sm font-medium bg-[#f8fafc]/70 dark:bg-muted/20 border border-slate-100 dark:border-border/40 text-foreground"
+              >
+                {details?.jobRole || currentUser?.jobRole || currentEmployee?.designation || (isHr ? 'HR Administrator' : isManager ? 'Manager' : 'Employee')}
+              </div>
+            </div>
+
+            {/* Resume Document */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                Resume Document
+              </label>
+              <div className="h-12 w-full rounded-xl px-4 flex items-center justify-between text-sm bg-[#f8fafc]/70 dark:bg-muted/20 border border-slate-100 dark:border-border/40">
+                <span className="truncate text-xs font-medium text-slate-600 dark:text-slate-400">
+                  {details?.resumeFileName || currentUser?.resumeFileName || 'resume.pdf'}
+                </span>
+                <a
+                  href={`${authBaseUrl}/api/employee/resume`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-3 py-1.5 transition-colors cursor-pointer shrink-0"
+                  data-testid="button-view-my-resume"
+                >
+                  <FileText size={13} /> View Resume
+                </a>
+              </div>
+            </div>
           </div>
           {isEditing && (
             <div className="mt-6 flex justify-end gap-2 border-t border-slate-100 dark:border-border pt-4">
@@ -3017,6 +3447,7 @@ function HREmployees({ employees, setEmployees }: { employees: Employee[]; setEm
   const [detailsMessage, setDetailsMessage] = useState('');
   const [detailsError, setDetailsError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Employee | null>(null);
+  const [selectedUserResumeName, setSelectedUserResumeName] = useState<string | null>(null);
 
   const loadBackendUsers = () => {
     authRequest<BackendUser[]>('/api/hr/users')
@@ -3078,6 +3509,7 @@ function HREmployees({ employees, setEmployees }: { employees: Employee[]; setEm
 
     try {
       const details = await authRequest<PersonalDetails>(`/api/hr/employees/${numericId}/personal-details`);
+      setSelectedUserResumeName(details.resumeFileName || null);
       setSelectedUser({
         id: details.id,
         name: details.fullName,
@@ -3093,6 +3525,7 @@ function HREmployees({ employees, setEmployees }: { employees: Employee[]; setEm
         mobileNumber: details.mobileNumber || '',
       });
     } catch {
+      setSelectedUserResumeName(null);
       setSelectedUser({
         id: numericId,
         name: employee.name,
@@ -3203,10 +3636,15 @@ function HREmployees({ employees, setEmployees }: { employees: Employee[]; setEm
 
   const handleConfirmDeleteEmployee = async (confirmationWord: string) => {
     if (!deleteTarget) return;
-    const match = backendUsers.find((u) => u.email.toLowerCase() === deleteTarget.email.toLowerCase());
-    const numericId = match ? match.id : (deleteTarget.id.startsWith('EMP-') ? 1 : Number(deleteTarget.id));
+    const match = backendUsers.find(
+      (u) =>
+        u.email.toLowerCase() === deleteTarget.email.toLowerCase() ||
+        (u.employeeId && u.employeeId.toLowerCase() === deleteTarget.id.toLowerCase()) ||
+        String(u.id) === deleteTarget.id
+    );
+    const identifier = match ? String(match.id) : (deleteTarget.id || deleteTarget.email);
     await ensureCsrf();
-    await authRequest(`/api/hr/employees/${numericId}/delete`, {
+    await authRequest(`/api/hr/employees/${encodeURIComponent(identifier)}/delete`, {
       method: 'POST',
       body: JSON.stringify({ confirmation: confirmationWord }),
     });
@@ -3366,6 +3804,27 @@ function HREmployees({ employees, setEmployees }: { employees: Employee[]; setEm
                   className="mt-1.5 w-full resize-none rounded-lg border border-input bg-background p-3 text-sm outline-none focus:border-primary"
                 />
               </label>
+
+              {selectedUser && (
+                <div className="sm:col-span-2 rounded-xl border border-border bg-muted/20 p-3.5 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5 overflow-hidden">
+                    <FileText size={18} className="text-primary shrink-0" />
+                    <div>
+                      <p className="text-xs font-semibold text-foreground">Employee Resume</p>
+                      <p className="text-[11px] text-muted-foreground truncate">{selectedUserResumeName || 'Uploaded document available'}</p>
+                    </div>
+                  </div>
+                  <a
+                    href={`${authBaseUrl}/api/hr/users/${selectedUser.id}/resume`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-testid="link-employee-resume"
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary px-3 py-1.5 text-xs font-semibold transition-colors shrink-0"
+                  >
+                    <Download size={13} /> View / Download
+                  </a>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-2 pt-2">
@@ -3537,6 +3996,1021 @@ function HREmployees({ employees, setEmployees }: { employees: Employee[]; setEm
         accountRole="Employee"
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleConfirmDeleteEmployee}
+      />
+    </div>
+  );
+}
+
+const AVAILABLE_PERMISSIONS: { code: string; label: string; desc: string }[] = [
+  { code: 'VIEW_ASSIGNED_EMPLOYEES', label: 'View team roster', desc: 'Inspect assigned direct reports and their profiles' },
+  { code: 'REVIEW_ASSIGNED_LEAVE', label: 'Review leave requests', desc: 'Review leave applications and verify uploaded medical proofs' },
+  { code: 'VIEW_ASSIGNED_ATTENDANCE', label: 'View attendance logs', desc: 'Monitor check-in, check-out, and team working hours' },
+  { code: 'UPDATE_ASSIGNED_EMPLOYEE_PROFILE', label: 'Update team profile', desc: 'Update contact information and profile details for assigned team' },
+];
+
+function HRManagers({ employees, setEmployees }: { employees: Employee[]; setEmployees: (value: Employee[] | ((prev: Employee[]) => Employee[])) => void }) {
+  const [managers, setManagers] = useLocalState<ManagerSummary[]>('meridian-managers', seedManagers);
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<'All' | Status>('All');
+  const [addOpen, setAddOpen] = useState(false);
+  const [addMode, setAddMode] = useState<'promote' | 'new'>('promote');
+  const [selectedEmployeeEmail, setSelectedEmployeeEmail] = useState('');
+  const [newManager, setNewManager] = useState({ name: '', email: '', department: 'Admissions' });
+
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [selectedManager, setSelectedManager] = useState<ManagerSummary | null>(null);
+  const [editForm, setEditForm] = useState({
+    fullName: '',
+    gender: '',
+    dateOfBirth: '',
+    residentialAddress: '',
+    mobileNumber: '',
+  });
+  const [savingDetails, setSavingDetails] = useState(false);
+  const [selectedManagerResumeName, setSelectedManagerResumeName] = useState<string | null>(null);
+
+  const [teamModalOpen, setTeamModalOpen] = useState(false);
+  const [activeTeamManager, setActiveTeamManager] = useState<ManagerSummary | null>(null);
+  const [teamAssignments, setTeamAssignments] = useState<Array<{ id: number; name: string; email: string; department?: string; employeeId?: string }>>([]);
+  const [selectedAssigneeId, setSelectedAssigneeId] = useState('');
+  const [teamLoading, setTeamLoading] = useState(false);
+
+  const [permsModalOpen, setPermsModalOpen] = useState(false);
+  const [activePermsManager, setActivePermsManager] = useState<ManagerSummary | null>(null);
+  const [managerPerms, setManagerPerms] = useState<string[]>([]);
+  const [savingPerms, setSavingPerms] = useState(false);
+
+  const [deleteTarget, setDeleteTarget] = useState<ManagerSummary | null>(null);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+
+  const loadBackendManagers = async () => {
+    try {
+      const data = await authRequest<Array<{
+        id: number;
+        name: string;
+        email: string;
+        role: string;
+        status: string;
+        employeeId?: string;
+        assignedCount: number;
+        permissions: string[];
+      }>>('/api/hr/managers');
+      if (data && Array.isArray(data) && data.length > 0) {
+        setManagers((prev) => {
+          const map = new Map<string, ManagerSummary>();
+          prev.forEach((m) => map.set(m.email.toLowerCase(), m));
+          data.forEach((d) => {
+            const key = d.email.toLowerCase();
+            const existing = map.get(key);
+            map.set(key, {
+              id: d.id,
+              name: d.name,
+              email: d.email,
+              employeeId: d.employeeId || existing?.employeeId,
+              department: existing?.department || 'Operations',
+              role: existing?.role || 'Manager',
+              status: d.status === 'ACTIVE' ? 'Active' : 'Inactive',
+              assignedCount: d.assignedCount,
+              permissions: d.permissions && d.permissions.length > 0 ? d.permissions : existing?.permissions || [],
+            });
+          });
+          return Array.from(map.values());
+        });
+      }
+    } catch {
+      // Local fallback
+    }
+  };
+
+  useEffect(() => {
+    loadBackendManagers();
+  }, []);
+
+  const openPersonalDetails = async (mgr: ManagerSummary) => {
+    setSelectedManager(mgr);
+    setEditForm({
+      fullName: mgr.name,
+      gender: '',
+      dateOfBirth: '',
+      residentialAddress: '',
+      mobileNumber: '',
+    });
+    setEditModalOpen(true);
+    setError('');
+    setMessage('');
+
+    try {
+      const details = await authRequest<PersonalDetails>(`/api/hr/employees/${mgr.id}/personal-details`);
+      if (details) {
+        setSelectedManagerResumeName(details.resumeFileName || null);
+        setEditForm({
+          fullName: details.fullName || mgr.name,
+          gender: details.gender || '',
+          dateOfBirth: details.dateOfBirth || '',
+          residentialAddress: details.residentialAddress || '',
+          mobileNumber: details.mobileNumber || '',
+        });
+      }
+    } catch {
+      setSelectedManagerResumeName(null);
+    }
+  };
+
+  const handleSaveDetails = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!selectedManager) return;
+    setSavingDetails(true);
+    setError('');
+    setMessage('');
+
+    if (!editForm.fullName.trim()) {
+      setError('Full name is required.');
+      setSavingDetails(false);
+      return;
+    }
+
+    try {
+      await ensureCsrf();
+      await authRequest(`/api/hr/employees/${selectedManager.id}/personal-details`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          fullName: editForm.fullName.trim(),
+          gender: editForm.gender.trim() || null,
+          dateOfBirth: editForm.dateOfBirth || null,
+          residentialAddress: editForm.residentialAddress.trim() || null,
+          mobileNumber: editForm.mobileNumber.trim() || null,
+        }),
+      });
+      setMessage(`Personal details updated successfully for ${editForm.fullName}.`);
+      setManagers((prev) =>
+        prev.map((m) =>
+          m.id === selectedManager.id
+            ? { ...m, name: editForm.fullName.trim() }
+            : m
+        )
+      );
+      setEmployees((prev) =>
+        prev.map((emp) =>
+          emp.email.toLowerCase() === selectedManager.email.toLowerCase()
+            ? { ...emp, name: editForm.fullName.trim() }
+            : emp
+        )
+      );
+      setTimeout(() => {
+        setEditModalOpen(false);
+        setMessage('');
+      }, 1500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to update personal details.');
+    } finally {
+      setSavingDetails(false);
+    }
+  };
+
+  const openTeamModal = async (mgr: ManagerSummary) => {
+    setActiveTeamManager(mgr);
+    setTeamModalOpen(true);
+    setTeamLoading(true);
+    setSelectedAssigneeId('');
+    try {
+      const assignments = await authRequest<Array<{ id: number; name: string; email: string; department?: string; employeeId?: string }>>(`/api/hr/managers/${mgr.id}/assignments`);
+      setTeamAssignments(assignments || []);
+    } catch {
+      const localMatches = employees.slice(0, mgr.assignedCount).map((e, i) => ({
+        id: i + 1,
+        name: e.name,
+        email: e.email,
+        department: e.department,
+        employeeId: e.id,
+      }));
+      setTeamAssignments(localMatches);
+    } finally {
+      setTeamLoading(false);
+    }
+  };
+
+  const handleAssignEmployee = async () => {
+    if (!activeTeamManager || !selectedAssigneeId) return;
+    try {
+      await ensureCsrf();
+      await authRequest(`/api/hr/managers/${activeTeamManager.id}/assignments`, {
+        method: 'POST',
+        body: JSON.stringify({ employeeId: Number(selectedAssigneeId) || 1 }),
+      });
+      const emp = employees.find((e) => e.id === selectedAssigneeId || e.email === selectedAssigneeId);
+      if (emp) {
+        setTeamAssignments((prev) => [
+          ...prev,
+          { id: prev.length + 1, name: emp.name, email: emp.email, department: emp.department, employeeId: emp.id },
+        ]);
+      }
+      setManagers((prev) =>
+        prev.map((m) =>
+          m.id === activeTeamManager.id
+            ? { ...m, assignedCount: m.assignedCount + 1 }
+            : m
+        )
+      );
+      setSelectedAssigneeId('');
+      setMessage('Team member assigned successfully.');
+      setTimeout(() => setMessage(''), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to assign employee.');
+      setTimeout(() => setError(''), 3000);
+    }
+  };
+
+  const handleUnassignEmployee = async (empId: number, empEmail?: string) => {
+    if (!activeTeamManager) return;
+    try {
+      await ensureCsrf();
+      await authRequest(`/api/hr/managers/${activeTeamManager.id}/assignments/${empId}`, {
+        method: 'DELETE',
+      });
+      setTeamAssignments((prev) => prev.filter((a) => a.id !== empId && (!empEmail || a.email !== empEmail)));
+      setManagers((prev) =>
+        prev.map((m) =>
+          m.id === activeTeamManager.id
+            ? { ...m, assignedCount: Math.max(0, m.assignedCount - 1) }
+            : m
+        )
+      );
+      setMessage('Team member assignment removed.');
+      setTimeout(() => setMessage(''), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to remove assignment.');
+      setTimeout(() => setError(''), 3000);
+    }
+  };
+
+  const openPermsModal = async (mgr: ManagerSummary) => {
+    setActivePermsManager(mgr);
+    setPermsModalOpen(true);
+    setManagerPerms(mgr.permissions || []);
+    try {
+      const perms = await authRequest<string[]>(`/api/hr/managers/${mgr.id}/permissions`);
+      if (perms && Array.isArray(perms)) {
+        setManagerPerms(perms);
+      }
+    } catch {
+      // Keep existing
+    }
+  };
+
+  const togglePermission = async (permCode: string) => {
+    if (!activePermsManager) return;
+    setSavingPerms(true);
+    const hasPerm = managerPerms.includes(permCode);
+    try {
+      await ensureCsrf();
+      if (hasPerm) {
+        await authRequest(`/api/hr/managers/${activePermsManager.id}/permissions/${permCode}`, {
+          method: 'DELETE',
+        });
+        const updated = managerPerms.filter((p) => p !== permCode);
+        setManagerPerms(updated);
+        setManagers((prev) =>
+          prev.map((m) => (m.id === activePermsManager.id ? { ...m, permissions: updated } : m))
+        );
+      } else {
+        await authRequest(`/api/hr/managers/${activePermsManager.id}/permissions`, {
+          method: 'POST',
+          body: JSON.stringify({ permission: permCode }),
+        });
+        const updated = [...managerPerms, permCode];
+        setManagerPerms(updated);
+        setManagers((prev) =>
+          prev.map((m) => (m.id === activePermsManager.id ? { ...m, permissions: updated } : m))
+        );
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update permission.');
+      setTimeout(() => setError(''), 3000);
+    } finally {
+      setSavingPerms(false);
+    }
+  };
+
+  const toggleStatus = async (mgr: ManagerSummary) => {
+    const isDeactivating = mgr.status === 'Active';
+    const actionLabel = isDeactivating ? 'deactivate' : 'activate';
+    if (isDeactivating && !window.confirm(`Are you sure you want to deactivate ${mgr.name}? Their manager access and permissions will be suspended while keeping records intact.`)) {
+      return;
+    }
+    try {
+      await ensureCsrf();
+      await authRequest(`/api/hr/employees/${mgr.id}/${actionLabel}`, { method: 'POST', body: '{}' });
+      setMessage(`Manager ${mgr.name} has been ${actionLabel}d successfully.`);
+      setTimeout(() => setMessage(''), 4000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Unable to ${actionLabel} manager.`);
+      setTimeout(() => setError(''), 4000);
+    }
+    setManagers((prev) =>
+      prev.map((m) => (m.id === mgr.id ? { ...m, status: isDeactivating ? 'Inactive' : 'Active' } : m))
+    );
+  };
+
+  const handleConfirmDeleteManager = async (confirmationWord: string) => {
+    if (!deleteTarget) return;
+    await ensureCsrf();
+    await authRequest(`/api/hr/users/${encodeURIComponent(String(deleteTarget.id))}/delete`, {
+      method: 'POST',
+      body: JSON.stringify({ confirmation: confirmationWord }),
+    });
+    setManagers((prev) => prev.filter((m) => m.id !== deleteTarget.id));
+    setMessage(`Manager ${deleteTarget.name} has been permanently deleted.`);
+    setTimeout(() => setMessage(''), 4000);
+  };
+
+  const handleAddOrPromote = async (e: FormEvent) => {
+    e.preventDefault();
+    let name = '';
+    let email = '';
+    let dept = '';
+
+    if (addMode === 'promote') {
+      const emp = employees.find((e) => e.email.toLowerCase() === selectedEmployeeEmail.toLowerCase());
+      if (!emp) return;
+      name = emp.name;
+      email = emp.email;
+      dept = emp.department;
+    } else {
+      if (!newManager.name || !newManager.email) return;
+      name = newManager.name;
+      email = newManager.email;
+      dept = newManager.department;
+    }
+
+    try {
+      await ensureCsrf();
+      await authRequest('/api/hr/managers', {
+        method: 'POST',
+        body: JSON.stringify({ name, email, department: dept }),
+      });
+    } catch {
+      // Local fallback
+    }
+
+    setManagers((prev) => {
+      const existingIdx = prev.findIndex((m) => m.email.toLowerCase() === email.toLowerCase());
+      if (existingIdx !== -1) {
+        const copy = [...prev];
+        copy[existingIdx] = { ...copy[existingIdx], status: 'Active' };
+        return copy;
+      }
+      return [
+        ...prev,
+        {
+          id: Date.now(),
+          name,
+          email,
+          department: dept,
+          role: `${dept} Manager`,
+          status: 'Active',
+          assignedCount: 0,
+          permissions: ['VIEW_ASSIGNED_EMPLOYEES', 'REVIEW_ASSIGNED_LEAVE', 'VIEW_ASSIGNED_ATTENDANCE', 'UPDATE_ASSIGNED_EMPLOYEE_PROFILE'],
+        },
+      ];
+    });
+
+    setAddOpen(false);
+    setSelectedEmployeeEmail('');
+    setNewManager({ name: '', email: '', department: 'Admissions' });
+    setMessage(`Manager ${name} has been added and configured.`);
+    setTimeout(() => setMessage(''), 4000);
+  };
+
+  const filtered = managers.filter(
+    (mgr) =>
+      (filter === 'All' || mgr.status === filter) &&
+      `${mgr.name} ${mgr.department || ''} ${mgr.email} ${mgr.employeeId || ''}`.toLowerCase().includes(query.toLowerCase())
+  );
+
+  const previewAge = computeAge(editForm.dateOfBirth);
+  const totalAssignedTeam = managers.reduce((sum, m) => sum + (m.assignedCount || 0), 0);
+  const activeCount = managers.filter((m) => m.status === 'Active').length;
+
+  return (
+    <div className="page-enter">
+      <SectionTitle
+        eyebrow="People operations"
+        title="Managers"
+        detail={`${managers.length} managers in your organization. Supervise manager permissions, oversee assigned teams, and edit manager profiles.`}
+        action={
+          <Button testId="button-add-manager" variant="secondary" onClick={() => setAddOpen((v) => !v)}>
+            <Plus size={16} /> Add manager
+          </Button>
+        }
+      />
+
+      {/* KPI Overview Cards */}
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="Total managers" value={String(managers.length)} detail="Configured in directory" icon={UserCog} accent="teal" />
+        <StatCard label="Active managers" value={String(activeCount)} detail={`${managers.length - activeCount} inactive`} icon={Users} accent="sky" />
+        <StatCard label="Supervised team" value={String(totalAssignedTeam)} detail="Direct reports assigned" icon={CalendarCheck2} accent="amber" />
+        <StatCard label="Permission coverage" value="100%" detail="Active operational scopes" icon={ShieldCheck} accent="rose" />
+      </div>
+
+      {message && (
+        <p role="alert" className="mb-4 rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-xs font-semibold text-emerald-700">
+          {message}
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="mb-4 rounded-lg bg-rose-50 border border-rose-200 p-3 text-xs font-semibold text-rose-700">
+          {error}
+        </p>
+      )}
+
+      {/* Add / Promote Manager Modal */}
+      {addOpen && (
+        <div className="mb-6 rounded-2xl border border-primary/25 bg-primary/5 p-6 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="font-bold text-foreground">Add or Promote Manager</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Promote an existing employee to manager or configure a new manager account.
+              </p>
+            </div>
+            <button
+              type="button"
+              data-testid="button-close-add-manager"
+              onClick={() => setAddOpen(false)}
+              className="rounded-lg p-2 text-muted-foreground hover:bg-muted"
+            >
+              <X size={17} />
+            </button>
+          </div>
+
+          <div className="mb-4 flex gap-2 border-b border-border/70 pb-3">
+            <button
+              type="button"
+              onClick={() => setAddMode('promote')}
+              className={cx(
+                'rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+                addMode === 'promote' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'
+              )}
+            >
+              Promote existing employee
+            </button>
+            <button
+              type="button"
+              onClick={() => setAddMode('new')}
+              className={cx(
+                'rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+                addMode === 'new' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'
+              )}
+            >
+              Create new manager
+            </button>
+          </div>
+
+          <form onSubmit={handleAddOrPromote} className="space-y-4">
+            {addMode === 'promote' ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block text-sm font-medium">
+                  Select employee to promote *
+                  <select
+                    data-testid="select-promote-employee"
+                    required
+                    value={selectedEmployeeEmail}
+                    onChange={(e) => setSelectedEmployeeEmail(e.target.value)}
+                    className="mt-1.5 h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary"
+                  >
+                    <option value="">Choose an employee...</option>
+                    {employees.map((emp) => (
+                      <option key={emp.email} value={emp.email}>
+                        {emp.name} ({emp.email}) — {emp.department}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-3">
+                <input
+                  data-testid="input-new-manager-name"
+                  required
+                  placeholder="Manager full name"
+                  value={newManager.name}
+                  onChange={(e) => setNewManager({ ...newManager, name: e.target.value })}
+                  className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary"
+                />
+                <input
+                  data-testid="input-new-manager-email"
+                  required
+                  type="email"
+                  placeholder="manager@northstar.edu"
+                  value={newManager.email}
+                  onChange={(e) => setNewManager({ ...newManager, email: e.target.value })}
+                  className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary"
+                />
+                <input
+                  data-testid="input-new-manager-department"
+                  required
+                  placeholder="Department (e.g. Admissions)"
+                  value={newManager.department}
+                  onChange={(e) => setNewManager({ ...newManager, department: e.target.value })}
+                  className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary"
+                />
+              </div>
+            )}
+            <div className="flex items-center gap-2 pt-1">
+              <Button type="submit" testId="button-save-manager">
+                <Check size={16} /> Save manager configuration
+              </Button>
+              <Button type="button" variant="ghost" testId="button-cancel-add-manager" onClick={() => setAddOpen(false)}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Edit Personal Details Modal */}
+      {editModalOpen && selectedManager && (
+        <div className="mb-6 rounded-2xl border border-primary/30 bg-card p-6 shadow-md">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <UserAvatar user={{ id: selectedManager.id, name: selectedManager.name, email: selectedManager.email }} className="h-12 w-12" />
+              <div>
+                <h3 className="text-lg font-bold">Edit manager details: {selectedManager.name}</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Manager Email: <span className="font-semibold text-foreground">{selectedManager.email}</span> · Dept: {selectedManager.department}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              data-testid="button-close-manager-details-modal"
+              onClick={() => setEditModalOpen(false)}
+              className="rounded-lg p-2 text-muted-foreground hover:bg-muted"
+            >
+              <X size={17} />
+            </button>
+          </div>
+
+          <form onSubmit={handleSaveDetails} className="mt-5 space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block text-sm font-medium">
+                Full name *
+                <input
+                  data-testid="input-edit-manager-fullname"
+                  required
+                  value={editForm.fullName}
+                  onChange={(e) => setEditForm({ ...editForm, fullName: e.target.value })}
+                  className="mt-1.5 h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary"
+                />
+              </label>
+
+              <label className="block text-sm font-medium">
+                Gender
+                <select
+                  data-testid="select-edit-manager-gender"
+                  value={editForm.gender}
+                  onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}
+                  className="mt-1.5 h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary"
+                >
+                  <option value="">Select gender...</option>
+                  <option value="MALE">Male</option>
+                  <option value="FEMALE">Female</option>
+                  <option value="NON_BINARY">Non-binary</option>
+                  <option value="OTHER">Other</option>
+                  <option value="PREFER_NOT_TO_SAY">Prefer not to say</option>
+                </select>
+              </label>
+
+              <div>
+                <label className="block text-sm font-medium">
+                  Date of birth
+                  <input
+                    data-testid="input-edit-manager-dob"
+                    type="date"
+                    max={new Date().toISOString().slice(0, 10)}
+                    value={editForm.dateOfBirth}
+                    onChange={(e) => setEditForm({ ...editForm, dateOfBirth: e.target.value })}
+                    className="mt-1.5 h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary"
+                  />
+                </label>
+                <div className="mt-1 text-xs text-muted-foreground flex items-center gap-1.5">
+                  <span>Calculated age:</span>
+                  <span className="font-semibold text-foreground">
+                    {previewAge !== null ? `${previewAge} years old` : '—'}
+                  </span>
+                </div>
+              </div>
+
+              <label className="block text-sm font-medium">
+                Mobile number
+                <input
+                  data-testid="input-edit-manager-mobile"
+                  placeholder="+1 (555) 019-3456"
+                  value={editForm.mobileNumber}
+                  onChange={(e) => setEditForm({ ...editForm, mobileNumber: e.target.value })}
+                  className="mt-1.5 h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary"
+                />
+              </label>
+
+              <label className="block text-sm font-medium sm:col-span-2">
+                Residential address
+                <textarea
+                  data-testid="input-edit-manager-address"
+                  rows={2}
+                  placeholder="Street, City, Postal Code"
+                  value={editForm.residentialAddress}
+                  onChange={(e) => setEditForm({ ...editForm, residentialAddress: e.target.value })}
+                  className="mt-1.5 w-full resize-none rounded-lg border border-input bg-background p-3 text-sm outline-none focus:border-primary"
+                />
+              </label>
+
+              {selectedManager && (
+                <div className="sm:col-span-2 rounded-xl border border-border bg-muted/20 p-3.5 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5 overflow-hidden">
+                    <FileText size={18} className="text-primary shrink-0" />
+                    <div>
+                      <p className="text-xs font-semibold text-foreground">Manager Resume</p>
+                      <p className="text-[11px] text-muted-foreground truncate">{selectedManagerResumeName || 'Uploaded document available'}</p>
+                    </div>
+                  </div>
+                  <a
+                    href={`${authBaseUrl}/api/hr/users/${selectedManager.id}/resume`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-testid="link-manager-resume"
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary px-3 py-1.5 text-xs font-semibold transition-colors shrink-0"
+                  >
+                    <Download size={13} /> View / Download
+                  </a>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 pt-2">
+              <Button type="submit" testId="button-save-manager-details" disabled={savingDetails}>
+                {savingDetails ? 'Saving…' : 'Save personal details'}
+              </Button>
+              <Button
+                variant="ghost"
+                type="button"
+                testId="button-cancel-manager-details"
+                onClick={() => setEditModalOpen(false)}
+              >
+                Cancel
+              </Button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Team Assignments Modal */}
+      {teamModalOpen && activeTeamManager && (
+        <div className="mb-6 rounded-2xl border border-primary/30 bg-card p-6 shadow-md">
+          <div className="flex items-center justify-between border-b border-border/70 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <Users size={22} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold">Manage Supervised Team: {activeTeamManager.name}</h3>
+                <p className="text-xs text-muted-foreground">
+                  Assign or remove employees reporting directly to this manager.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              data-testid="button-close-team-modal"
+              onClick={() => setTeamModalOpen(false)}
+              className="rounded-lg p-2 text-muted-foreground hover:bg-muted"
+            >
+              <X size={17} />
+            </button>
+          </div>
+
+          {/* Assign New Employee Form */}
+          <div className="mt-4 rounded-xl border border-border bg-muted/30 p-4">
+            <p className="text-xs font-semibold text-foreground uppercase tracking-wider mb-2">
+              Assign employee to {activeTeamManager.name}
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <select
+                data-testid="select-assign-team-employee"
+                value={selectedAssigneeId}
+                onChange={(e) => setSelectedAssigneeId(e.target.value)}
+                className="h-10 flex-1 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary"
+              >
+                <option value="">Select employee to assign...</option>
+                {employees
+                  .filter((emp) => !teamAssignments.some((a) => a.email.toLowerCase() === emp.email.toLowerCase()))
+                  .map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name} ({emp.email}) — {emp.department}
+                    </option>
+                  ))}
+              </select>
+              <Button
+                type="button"
+                testId="button-submit-team-assign"
+                disabled={!selectedAssigneeId}
+                onClick={handleAssignEmployee}
+                className="shrink-0"
+              >
+                <Plus size={15} /> Assign to team
+              </Button>
+            </div>
+          </div>
+
+          {/* Currently Assigned Roster */}
+          <div className="mt-5">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+              Currently Supervised Team Members ({teamAssignments.length})
+            </p>
+            {teamLoading ? (
+              <p className="text-xs text-muted-foreground py-4">Loading assigned team members…</p>
+            ) : teamAssignments.length === 0 ? (
+              <p className="text-xs italic text-muted-foreground py-3">No direct reports currently assigned to this manager.</p>
+            ) : (
+              <div className="divide-y divide-border rounded-xl border border-border">
+                {teamAssignments.map((assignee) => (
+                  <div
+                    key={assignee.id}
+                    data-testid={`row-assigned-employee-${assignee.id}`}
+                    className="flex items-center justify-between p-3.5 hover:bg-muted/30 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <UserAvatar user={{ name: assignee.name, email: assignee.email }} className="h-9 w-9" />
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">{assignee.name}</p>
+                        <p className="text-xs text-muted-foreground">{assignee.email} · {assignee.department || 'Department'}</p>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      testId={`button-unassign-${assignee.id}`}
+                      className="text-xs text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                      onClick={() => handleUnassignEmployee(assignee.id, assignee.email)}
+                    >
+                      Remove from team
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="mt-5 flex justify-end">
+            <Button variant="secondary" testId="button-done-team-modal" onClick={() => setTeamModalOpen(false)}>
+              Done
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Permissions Modal */}
+      {permsModalOpen && activePermsManager && (
+        <div className="mb-6 rounded-2xl border border-primary/30 bg-card p-6 shadow-md">
+          <div className="flex items-center justify-between border-b border-border/70 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <ShieldCheck size={22} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold">Configure Permissions: {activePermsManager.name}</h3>
+                <p className="text-xs text-muted-foreground">
+                  Grant or revoke granular administrative capabilities for this manager.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              data-testid="button-close-perms-modal"
+              onClick={() => setPermsModalOpen(false)}
+              className="rounded-lg p-2 text-muted-foreground hover:bg-muted"
+            >
+              <X size={17} />
+            </button>
+          </div>
+
+          <div className="mt-5 space-y-3">
+            {AVAILABLE_PERMISSIONS.map((p) => {
+              const active = managerPerms.includes(p.code);
+              return (
+                <div
+                  key={p.code}
+                  data-testid={`perm-row-${p.code}`}
+                  className={cx(
+                    'flex items-center justify-between rounded-xl border p-4 transition-all',
+                    active ? 'border-primary/40 bg-primary/5' : 'border-border bg-card'
+                  )}
+                >
+                  <div className="pr-4">
+                    <p className="text-sm font-semibold text-foreground">{p.label}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{p.desc}</p>
+                    <span className="mono mt-1 inline-block text-[10px] text-slate-400">{p.code}</span>
+                  </div>
+                  <button
+                    type="button"
+                    data-testid={`button-toggle-perm-${p.code}`}
+                    disabled={savingPerms}
+                    onClick={() => togglePermission(p.code)}
+                    className={cx(
+                      'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2',
+                      active ? 'bg-primary' : 'bg-slate-300 dark:bg-slate-700'
+                    )}
+                  >
+                    <span
+                      className={cx(
+                        'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out',
+                        active ? 'translate-x-5' : 'translate-x-0'
+                      )}
+                    />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-5 flex justify-end">
+            <Button variant="secondary" testId="button-done-perms-modal" onClick={() => setPermsModalOpen(false)}>
+              Done
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Managers Directory Table */}
+      <div className="rounded-2xl border border-card-border bg-card shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-border p-4 md:flex-row md:items-center md:justify-between">
+          <div className="relative max-w-sm flex-1">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              data-testid="input-search-managers"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search by name, team, or email"
+              className="h-10 w-full rounded-lg border border-input bg-background pl-9 pr-3 text-sm outline-none focus:border-primary"
+            />
+          </div>
+          <div className="flex gap-1 rounded-lg bg-muted p-1">
+            {(['All', 'Active', 'Inactive'] as const).map((item) => (
+              <button
+                key={item}
+                data-testid={`button-filter-${item.toLowerCase()}`}
+                onClick={() => setFilter(item)}
+                className={cx(
+                  'rounded-md px-3 py-1.5 text-xs font-semibold transition-colors',
+                  filter === item ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] text-left text-sm">
+            <thead>
+              <tr className="border-b border-border bg-muted/30 text-xs text-muted-foreground">
+                <th className="px-5 py-3 font-medium">Manager</th>
+                <th className="py-3 font-medium">Department</th>
+                <th className="py-3 font-medium">Supervised Team</th>
+                <th className="py-3 font-medium">Active Permissions</th>
+                <th className="py-3 font-medium">Status</th>
+                <th className="px-5 py-3 text-right font-medium">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {filtered.map((mgr) => (
+                <tr key={mgr.id} data-testid={`row-manager-${mgr.id}`} className="transition-colors hover:bg-muted/30">
+                  <td className="px-5 py-4">
+                    <div className="flex items-center gap-3">
+                      <UserAvatar user={{ id: mgr.id, name: mgr.name, email: mgr.email }} />
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <p className="font-semibold text-foreground">{mgr.name}</p>
+                          {mgr.employeeId && (
+                            <span className="mono rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                              {mgr.employeeId}
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-0.5 text-xs text-muted-foreground">{mgr.email}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="py-4 text-muted-foreground font-medium">{mgr.department || 'Operations'}</td>
+                  <td className="py-4">
+                    <div className="flex items-center gap-2">
+                      <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
+                        {mgr.assignedCount} direct report{mgr.assignedCount === 1 ? '' : 's'}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        testId={`button-manage-team-${mgr.id}`}
+                        className="h-7 px-2 text-xs"
+                        onClick={() => openTeamModal(mgr)}
+                      >
+                        Manage team
+                      </Button>
+                    </div>
+                  </td>
+                  <td className="py-4">
+                    <div className="flex flex-wrap items-center gap-1.5 max-w-[260px]">
+                      {mgr.permissions && mgr.permissions.length > 0 ? (
+                        mgr.permissions.slice(0, 2).map((p) => (
+                          <span key={p} className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-foreground">
+                            {p.replace('VIEW_ASSIGNED_', '').replace('REVIEW_ASSIGNED_', '').replace('UPDATE_ASSIGNED_', '').toLowerCase()}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-xs text-muted-foreground italic">None</span>
+                      )}
+                      {mgr.permissions && mgr.permissions.length > 2 && (
+                        <span className="rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+                          +{mgr.permissions.length - 2}
+                        </span>
+                      )}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        testId={`button-manage-permissions-${mgr.id}`}
+                        className="h-6 px-1.5 text-[11px] text-primary"
+                        onClick={() => openPermsModal(mgr)}
+                      >
+                        Edit
+                      </Button>
+                    </div>
+                  </td>
+                  <td className="py-4">
+                    <Badge tone={statusTone(mgr.status)}>{mgr.status}</Badge>
+                  </td>
+                  <td className="px-5 py-4 text-right">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <Button
+                        testId={`button-edit-details-${mgr.id}`}
+                        variant="secondary"
+                        className="px-2.5 text-xs"
+                        onClick={() => openPersonalDetails(mgr)}
+                      >
+                        <Pencil size={13} /> Edit details
+                      </Button>
+                      <Button
+                        testId={`button-team-${mgr.id}`}
+                        variant="ghost"
+                        className="px-2 text-xs"
+                        onClick={() => openTeamModal(mgr)}
+                      >
+                        <Users size={13} /> Team
+                      </Button>
+                      <Button
+                        testId={`button-permissions-${mgr.id}`}
+                        variant="ghost"
+                        className="px-2 text-xs"
+                        onClick={() => openPermsModal(mgr)}
+                      >
+                        <ShieldCheck size={13} /> Perms
+                      </Button>
+                      <Button
+                        testId={`button-toggle-manager-${mgr.id}`}
+                        variant="ghost"
+                        className="px-2.5 text-xs"
+                        onClick={() => toggleStatus(mgr)}
+                      >
+                        {mgr.status === 'Active' ? 'Deactivate' : 'Activate'}
+                      </Button>
+                      <Button
+                        testId={`button-delete-manager-${mgr.id}`}
+                        variant="danger"
+                        className="px-2 text-xs"
+                        onClick={() => setDeleteTarget(mgr)}
+                      >
+                        <Trash2 size={13} />
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {filtered.length === 0 && (
+            <EmptyState title="No managers found" detail="Try a different search query or status filter." />
+          )}
+        </div>
+      </div>
+
+      <DeleteConfirmationModal
+        isOpen={!!deleteTarget}
+        title={`Delete manager: ${deleteTarget?.name}`}
+        accountName={deleteTarget?.name}
+        accountEmail={deleteTarget?.email}
+        accountRole="Manager"
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleConfirmDeleteManager}
       />
     </div>
   );
@@ -4459,6 +5933,12 @@ type RegistrationItem = {
   assignedManagerUserId?: number | null;
   assignedManagerName?: string | null;
   needsHrReview?: boolean;
+  firstName?: string | null;
+  lastName?: string | null;
+  jobRole?: string | null;
+  age?: number | null;
+  gender?: string | null;
+  resumeFileName?: string | null;
 };
 
 function HRRegistrationsPage({
@@ -4651,7 +6131,7 @@ function HRRegistrationsPage({
   const handleConfirmDeleteRegistration = async (confirmationWord: string) => {
     if (!deleteRegTarget) return;
     await ensureCsrf();
-    await authRequest(`/api/hr/users/${deleteRegTarget.id}/delete`, {
+    await authRequest(`/api/hr/users/${encodeURIComponent(String(deleteRegTarget.id))}/delete`, {
       method: 'POST',
       body: JSON.stringify({ confirmation: confirmationWord }),
     });
@@ -4771,6 +6251,25 @@ function HRRegistrationsPage({
                       <div>
                         <p className="font-semibold">{item.name}</p>
                         <p className="mt-0.5 text-xs text-muted-foreground">{item.email}</p>
+                        {item.jobRole && (
+                          <p className="mt-0.5 text-xs font-semibold text-primary">{item.jobRole}</p>
+                        )}
+                        {(item.age || item.gender) && (
+                          <p className="text-[11px] text-muted-foreground">
+                            {item.age ? `${item.age} yrs` : ''}{item.age && item.gender ? ' · ' : ''}{item.gender || ''}
+                          </p>
+                        )}
+                        {item.resumeFileName && (
+                          <a
+                            href={`${authBaseUrl}/api/hr/users/${item.id}/resume`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            data-testid={`link-resume-${item.id}`}
+                            className="mt-1 inline-flex items-center gap-1 rounded bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary hover:bg-primary/20 transition-colors"
+                          >
+                            <FileText size={12} /> {item.resumeFileName}
+                          </a>
+                        )}
                       </div>
                     </div>
                   </td>
@@ -5147,9 +6646,12 @@ function HRAccessPage() {
 
   const handleConfirmDeleteManager = async (confirmationWord: string) => {
     if (!deleteManagerTarget) return;
-    const targetId = deleteManagerTarget.requesterUserId || deleteManagerTarget.id;
+    const targetId =
+      deleteManagerTarget.requesterUserId ||
+      deleteManagerTarget.requesterEmail ||
+      deleteManagerTarget.id;
     await ensureCsrf();
-    await authRequest(`/api/hr/users/${targetId}/delete`, {
+    await authRequest(`/api/hr/users/${encodeURIComponent(String(targetId))}/delete`, {
       method: 'POST',
       body: JSON.stringify({ confirmation: confirmationWord }),
     });
@@ -5439,7 +6941,7 @@ function AppContent() {
     return <Shell role={role} setRole={setRole} onSignOut={signOut} currentUser={currentUser}>{component}</Shell>;
   };
 
-  return <Switch><Route path="/"><BackendSignIn setRole={setRole} onSignIn={signIn} /></Route><Route path="/employee/dashboard">{page(<EmployeeDashboard employees={employees} attendance={attendance} leaves={leaves} currentUser={currentUser} />)}</Route><Route path="/employee/attendance">{page(<EmployeeAttendance attendance={attendance} setAttendance={setAttendance} currentUser={currentUser} employees={employees} />)}</Route><Route path="/employee/leave">{page(<EmployeeLeave leaves={leaves} setLeaves={setLeaves} currentUser={currentUser} employees={employees} />)}</Route><Route path="/employee/profile">{page(<EmployeeProfile role={role} employees={employees} setEmployees={setEmployees} currentUser={currentUser} />)}</Route><Route path="/manager/dashboard">{page(<ManagerDashboard leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/manager/leave-review">{page(<ManagerLeaveReview leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/hr/dashboard">{hrPage(<HRDashboard employees={employees} attendance={attendance} leaves={leaves} />)}</Route><Route path="/hr/registrations">{hrPage(<HRRegistrationsPage setEmployees={setEmployees} />)}</Route><Route path="/hr/employees">{hrPage(<HREmployees employees={employees} setEmployees={setEmployees} />)}</Route><Route path="/hr/access">{hrPage(<HRAccessPage />)}</Route><Route path="/hr/leave-requests">{hrPage(<HRLeaveRequests leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/hr/attendance">{hrPage(<HRAttendance attendance={attendance} employees={employees} />)}</Route><Route path="/hr/reports">{hrPage(<HRReports attendance={attendance} leaves={leaves} />)}</Route><Route path="/settings">{page(<SettingsPage role={role} currentUser={currentUser} setEmployees={setEmployees} />)}</Route><Route><BackendSignIn setRole={setRole} onSignIn={signIn} /></Route></Switch>;
+  return <Switch><Route path="/"><BackendSignIn setRole={setRole} onSignIn={signIn} /></Route><Route path="/employee/dashboard">{page(<EmployeeDashboard employees={employees} attendance={attendance} leaves={leaves} currentUser={currentUser} />)}</Route><Route path="/employee/attendance">{page(<EmployeeAttendance attendance={attendance} setAttendance={setAttendance} currentUser={currentUser} employees={employees} />)}</Route><Route path="/employee/leave">{page(<EmployeeLeave leaves={leaves} setLeaves={setLeaves} currentUser={currentUser} employees={employees} />)}</Route><Route path="/employee/profile">{page(<EmployeeProfile role={role} employees={employees} setEmployees={setEmployees} currentUser={currentUser} />)}</Route><Route path="/manager/dashboard">{page(<ManagerDashboard leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/manager/leave-review">{page(<ManagerLeaveReview leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/hr/dashboard">{hrPage(<HRDashboard employees={employees} attendance={attendance} leaves={leaves} />)}</Route><Route path="/hr/registrations">{hrPage(<HRRegistrationsPage setEmployees={setEmployees} />)}</Route><Route path="/hr/employees">{hrPage(<HREmployees employees={employees} setEmployees={setEmployees} />)}</Route><Route path="/hr/managers">{hrPage(<HRManagers employees={employees} setEmployees={setEmployees} />)}</Route><Route path="/hr/access">{hrPage(<HRAccessPage />)}</Route><Route path="/hr/leave-requests">{hrPage(<HRLeaveRequests leaves={leaves} setLeaves={setLeaves} />)}</Route><Route path="/hr/attendance">{hrPage(<HRAttendance attendance={attendance} employees={employees} />)}</Route><Route path="/hr/reports">{hrPage(<HRReports attendance={attendance} leaves={leaves} />)}</Route><Route path="/settings">{page(<SettingsPage role={role} currentUser={currentUser} setEmployees={setEmployees} />)}</Route><Route><BackendSignIn setRole={setRole} onSignIn={signIn} /></Route></Switch>;
 }
 function Router() { return <ErrorBoundary resetKey={window.location.pathname}><AppContent /></ErrorBoundary>; }
 function App() { return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><Router /></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>; }
