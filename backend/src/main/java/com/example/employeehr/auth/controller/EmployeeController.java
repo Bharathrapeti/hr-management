@@ -7,6 +7,8 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import java.util.List;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -29,6 +31,24 @@ public class EmployeeController {
     public HrManagementService.PersonalDetailsView personalDetails(Authentication authentication) {
         AuthUser user = (AuthUser) authentication.getPrincipal();
         return hrManagementService.getPersonalDetails(user.id());
+    }
+
+    @GetMapping("/resume")
+    public ResponseEntity<byte[]> myResume(Authentication authentication) {
+        AuthUser user = (AuthUser) authentication.getPrincipal();
+        var resume = hrManagementService.getUserResume(String.valueOf(user.id()));
+        if (resume == null || resume.data() == null) {
+            return ResponseEntity.notFound().build();
+        }
+        String contentType = resume.contentType() != null && !resume.contentType().isBlank()
+                ? resume.contentType() : "application/pdf";
+        String fileName = resume.fileName() != null && !resume.fileName().isBlank()
+                ? resume.fileName() : "resume.pdf";
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_TYPE, contentType)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + fileName + "\"")
+                .body(resume.data());
     }
 
     @PostMapping("/correction-requests")

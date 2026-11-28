@@ -37,15 +37,71 @@ public class AuthService {
     }
 
     @Transactional
+    public void signup(AuthController.SignupRequest request) {
+        String first = request.firstName();
+        String last = request.lastName();
+        String fullName = request.name();
+        if ((first != null && !first.isBlank()) || (last != null && !last.isBlank())) {
+            first = first != null ? first.trim() : "";
+            last = last != null ? last.trim() : "";
+            fullName = (first + " " + last).trim();
+        } else if (fullName != null && !fullName.isBlank()) {
+            fullName = fullName.trim();
+            String[] parts = fullName.split("\\s+", 2);
+            first = parts[0];
+            last = parts.length > 1 ? parts[1] : parts[0];
+        } else {
+            throw new IllegalArgumentException("First name and last name are required.");
+        }
+
+        if (fullName.isBlank()) {
+            throw new IllegalArgumentException("Name is required.");
+        }
+
+        signup(fullName, first, last, request.email(), request.password(), request.accountType(),
+                request.jobRole(), request.age(), request.gender(),
+                request.resumeFileName(), request.resumeContentType(), request.resumeFileSize(), request.resumeData());
+    }
+
+    @Transactional
     public void signup(String name, String email, String password) {
         signup(name, email, password, "EMPLOYEE");
     }
 
     @Transactional
     public void signup(String name, String email, String password, String accountType) {
+        String first = name;
+        String last = "";
+        if (name != null && name.contains(" ")) {
+            String[] p = name.trim().split("\\s+", 2);
+            first = p[0];
+            last = p[1];
+        }
+        signup(name, first, last, email, password, accountType, null, null, null, null, null, null, null);
+    }
+
+    @Transactional
+    public void signup(String name, String firstName, String lastName, String email, String password, String accountType,
+                       String jobRole, Integer age, String gender,
+                       String resumeFileName, String resumeContentType, Long resumeFileSize, String resumeData) {
         validatePassword(password);
         String normalizedEmail = normalizeEmail(email);
         boolean isManager = "MANAGER".equalsIgnoreCase(accountType);
+
+        if (age != null && (age < 18 || age > 99)) {
+            throw new IllegalArgumentException("Age must be between 18 and 99.");
+        }
+
+        String normalizedGender = null;
+        if (gender != null && !gender.isBlank()) {
+            String g = gender.trim().toUpperCase();
+            if ("MALE".equals(g) || "FEMALE".equals(g) || "NON_BINARY".equals(g) || "OTHER".equals(g)) {
+                normalizedGender = g;
+            } else {
+                normalizedGender = "MALE";
+            }
+        }
+
         var existing = jdbc.query("SELECT user_id, name, status FROM users WHERE email = ?",
                 (rs, row) -> new ExistingUser(rs.getLong(1), rs.getString(2), rs.getString(3)), normalizedEmail);
         if (!existing.isEmpty()) {
@@ -59,31 +115,67 @@ public class AuthService {
             }
             throw new IllegalArgumentException("An account with that email already exists.");
         }
+
         try {
             KeyHolder keyHolder = new GeneratedKeyHolder();
             String reviewReason = isManager ? "MANAGER_REGISTRATION" : null;
+            String encodedPass = passwordEncoder.encode(password);
+            String cleanFirst = firstName != null && !firstName.isBlank() ? firstName.trim() : null;
+            String cleanLast = lastName != null && !lastName.isBlank() ? lastName.trim() : null;
+            String cleanRole = jobRole != null && !jobRole.isBlank() ? jobRole.trim() : (isManager ? "Manager" : "Employee");
+            final String finalGender = normalizedGender;
+
             try {
+                // Attempt insertion with all profile columns (V1 + V3 + V4 + V5)
                 jdbc.update(connection -> {
                     var statement = connection.prepareStatement(
-                            "INSERT INTO users (name, email, password_hash, role, status, review_reason) VALUES (?, ?, ?, 'EMPLOYEE', 'INACTIVE', ?)",
+                            """
+                            INSERT INTO users (name, first_name, last_name, email, password_hash, role, status, review_reason,
+                                               job_role, age, gender, resume_file_name, resume_content_type, resume_file_size, resume_data)
+                            VALUES (?, ?, ?, ?, ?, 'EMPLOYEE', 'INACTIVE', ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
                             java.sql.Statement.RETURN_GENERATED_KEYS);
                     statement.setString(1, name.trim());
-                    statement.setString(2, normalizedEmail);
-                    statement.setString(3, passwordEncoder.encode(password));
-                    statement.setString(4, reviewReason);
+                    statement.setString(2, cleanFirst);
+                    statement.setString(3, cleanLast);
+                    statement.setString(4, normalizedEmail);
+                    statement.setString(5, encodedPass);
+                    statement.setString(6, reviewReason);
+                    statement.setString(7, cleanRole);
+                    if (age != null) statement.setInt(8, age); else statement.setNull(8, java.sql.Types.INTEGER);
+                    statement.setString(9, finalGender);
+                    statement.setString(10, resumeFileName);
+                    statement.setString(11, resumeContentType);
+                    if (resumeFileSize != null) statement.setLong(12, resumeFileSize); else statement.setNull(12, java.sql.Types.BIGINT);
+                    statement.setString(13, resumeData);
                     return statement;
                 }, keyHolder);
             } catch (org.springframework.jdbc.BadSqlGrammarException ex) {
-                jdbc.update(connection -> {
-                    var statement = connection.prepareStatement(
-                            "INSERT INTO users (name, email, password_hash, role, status) VALUES (?, ?, ?, 'EMPLOYEE', 'INACTIVE')",
-                            java.sql.Statement.RETURN_GENERATED_KEYS);
-                    statement.setString(1, name.trim());
-                    statement.setString(2, normalizedEmail);
-                    statement.setString(3, passwordEncoder.encode(password));
-                    return statement;
-                }, keyHolder);
+                // Fallback for schemas without V5 profile columns
+                try {
+                    jdbc.update(connection -> {
+                        var statement = connection.prepareStatement(
+                                "INSERT INTO users (name, email, password_hash, role, status, review_reason) VALUES (?, ?, ?, 'EMPLOYEE', 'INACTIVE', ?)",
+                                java.sql.Statement.RETURN_GENERATED_KEYS);
+                        statement.setString(1, name.trim());
+                        statement.setString(2, normalizedEmail);
+                        statement.setString(3, encodedPass);
+                        statement.setString(4, reviewReason);
+                        return statement;
+                    }, keyHolder);
+                } catch (org.springframework.jdbc.BadSqlGrammarException ex2) {
+                    jdbc.update(connection -> {
+                        var statement = connection.prepareStatement(
+                                "INSERT INTO users (name, email, password_hash, role, status) VALUES (?, ?, ?, 'EMPLOYEE', 'INACTIVE')",
+                                java.sql.Statement.RETURN_GENERATED_KEYS);
+                        statement.setString(1, name.trim());
+                        statement.setString(2, normalizedEmail);
+                        statement.setString(3, encodedPass);
+                        return statement;
+                    }, keyHolder);
+                }
             }
+
             Number key = keyHolder.getKey();
             if (key == null) throw new IllegalStateException("Unable to create user.");
             long userId = key.longValue();
@@ -195,7 +287,39 @@ public class AuthService {
                 }
             } catch (Exception ignored) {}
         }
-        return new AuthController.LoginResponse(user.id(), user.name(), user.email(), effectiveRole, roles, permissions, employeeId);
+
+        String firstName = null;
+        String lastName = null;
+        String jobRole = null;
+        Integer age = null;
+        String gender = null;
+        String resumeFileName = null;
+        try {
+            var details = jdbc.query(
+                    "SELECT first_name, last_name, job_role, age, gender, resume_file_name FROM users WHERE user_id = ?",
+                    (rs, row) -> new Object[]{
+                            rs.getString(1),
+                            rs.getString(2),
+                            rs.getString(3),
+                            rs.getObject(4) != null ? rs.getInt(4) : null,
+                            rs.getString(5),
+                            rs.getString(6)
+                    }, user.id());
+            if (!details.isEmpty()) {
+                Object[] row = details.getFirst();
+                firstName = (String) row[0];
+                lastName = (String) row[1];
+                jobRole = (String) row[2];
+                age = (Integer) row[3];
+                gender = (String) row[4];
+                resumeFileName = (String) row[5];
+            }
+        } catch (Exception ignored) {}
+
+        return new AuthController.LoginResponse(
+                user.id(), user.name(), user.email(), effectiveRole, roles, permissions, employeeId,
+                firstName, lastName, jobRole, age, gender, resumeFileName
+        );
     }
 
     private void validateLoginType(AuthUser user, String loginType) {
@@ -301,6 +425,52 @@ public class AuthService {
                     .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
         } catch (Exception exception) {
             throw new IllegalStateException("Unable to hash session token", exception);
+        }
+    }
+
+    public record UserResume(String fileName, String contentType, byte[] data) {}
+
+    public UserResume getUserResume(long userId) {
+        try {
+            var list = jdbc.query(
+                    "SELECT resume_file_name, resume_content_type, resume_data FROM users WHERE user_id = ?",
+                    (rs, row) -> {
+                        String name = rs.getString(1);
+                        String type = rs.getString(2);
+                        String rawData = rs.getString(3);
+                        if (rawData == null || rawData.isBlank()) return null;
+                        byte[] bytes;
+                        if (rawData.contains(",")) {
+                            String base64 = rawData.substring(rawData.indexOf(",") + 1);
+                            bytes = Base64.getDecoder().decode(base64);
+                        } else {
+                            try {
+                                bytes = Base64.getDecoder().decode(rawData);
+                            } catch (Exception e) {
+                                bytes = rawData.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                            }
+                        }
+                        return new UserResume(name, type, bytes);
+                    }, userId);
+            return list.isEmpty() ? null : list.getFirst();
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    public AuthController.ResumeInfo getUserResumeInfo(long userId) {
+        try {
+            var list = jdbc.query(
+                    "SELECT resume_file_name, resume_content_type, resume_file_size, resume_data FROM users WHERE user_id = ?",
+                    (rs, row) -> new AuthController.ResumeInfo(
+                            rs.getString(1),
+                            rs.getString(2),
+                            rs.getObject(3) != null ? rs.getLong(3) : null,
+                            rs.getString(4) != null && !rs.getString(4).isBlank()
+                    ), userId);
+            return list.isEmpty() ? null : list.getFirst();
+        } catch (Exception ex) {
+            return null;
         }
     }
 

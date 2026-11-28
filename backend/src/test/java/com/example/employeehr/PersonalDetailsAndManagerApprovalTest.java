@@ -471,13 +471,14 @@ class PersonalDetailsAndManagerApprovalTest {
     @Test
     void deleteUserByHrPermanentlyRemovesManagerOrEmployee() {
         mockHrUser(1L, true);
-        when(jdbc.query(contains("SELECT email, role FROM users WHERE user_id = ?"),
+        when(jdbc.query(contains("SELECT user_id, email, role FROM users WHERE user_id = ?"),
                 any(RowMapper.class), eq(60L)))
                 .thenAnswer(inv -> {
                     RowMapper<?> mapper = inv.getArgument(1);
                     java.sql.ResultSet rs = mock(java.sql.ResultSet.class);
-                    when(rs.getString(1)).thenReturn("manager@example.com");
-                    when(rs.getString(2)).thenReturn("EMPLOYEE");
+                    when(rs.getLong(1)).thenReturn(60L);
+                    when(rs.getString(2)).thenReturn("manager@example.com");
+                    when(rs.getString(3)).thenReturn("EMPLOYEE");
                     return List.of(mapper.mapRow(rs, 1));
                 });
         when(jdbc.update(contains("DELETE FROM users WHERE user_id = ?"), eq(60L))).thenReturn(1);
@@ -488,5 +489,102 @@ class PersonalDetailsAndManagerApprovalTest {
         verify(jdbc).update(contains("DELETE FROM manager_permissions WHERE manager_user_id = ?"), eq(60L));
         verify(jdbc).update(contains("DELETE FROM manager_access_requests WHERE requesting_user_id = ?"), eq(60L));
         verify(jdbc).update(contains("DELETE FROM users WHERE user_id = ?"), eq(60L));
+    }
+
+    @Test
+    void deleteUserByHrResolvesByEmployeeIdString() {
+        mockHrUser(1L, true);
+        when(jdbc.query(contains("SELECT user_id, email, role FROM users WHERE employee_id = ?"),
+                any(RowMapper.class), eq("EMP-1042")))
+                .thenAnswer(inv -> {
+                    RowMapper<?> mapper = inv.getArgument(1);
+                    java.sql.ResultSet rs = mock(java.sql.ResultSet.class);
+                    when(rs.getLong(1)).thenReturn(65L);
+                    when(rs.getString(2)).thenReturn("employee65@example.com");
+                    when(rs.getString(3)).thenReturn("EMPLOYEE");
+                    return List.of(mapper.mapRow(rs, 1));
+                });
+        when(jdbc.update(contains("DELETE FROM users WHERE user_id = ?"), eq(65L))).thenReturn(1);
+
+        hrService.deleteUserByHr("EMP-1042", 1L, "Delete");
+
+        verify(jdbc).update(contains("DELETE FROM users WHERE user_id = ?"), eq(65L));
+    }
+
+    @Test
+    void deleteUserByHrResolvesByEmail() {
+        mockHrUser(1L, true);
+        when(jdbc.query(contains("SELECT user_id, email, role FROM users WHERE LOWER(email) = LOWER(?)"),
+                any(RowMapper.class), eq("maya.chen@northstar.edu")))
+                .thenAnswer(inv -> {
+                    RowMapper<?> mapper = inv.getArgument(1);
+                    java.sql.ResultSet rs = mock(java.sql.ResultSet.class);
+                    when(rs.getLong(1)).thenReturn(70L);
+                    when(rs.getString(2)).thenReturn("maya.chen@northstar.edu");
+                    when(rs.getString(3)).thenReturn("EMPLOYEE");
+                    return List.of(mapper.mapRow(rs, 1));
+                });
+        when(jdbc.update(contains("DELETE FROM users WHERE user_id = ?"), eq(70L))).thenReturn(1);
+
+        hrService.deleteUserByHr("maya.chen@northstar.edu", 1L, "Delete");
+
+        verify(jdbc).update(contains("DELETE FROM users WHERE user_id = ?"), eq(70L));
+    }
+
+    @Test
+    void deleteUserByHrSucceedsIdempotentlyWhenUserNotInDatabase() {
+        mockHrUser(1L, true);
+        when(jdbc.query(anyString(), any(RowMapper.class), any())).thenReturn(List.of());
+
+        hrService.deleteUserByHr("EMP-NONEXISTENT", 1L, "Delete");
+        // No exception thrown, completes cleanly
+    }
+
+    @Test
+    void managersReturnsApprovedManagersWithCountsAndPermissions() {
+        when(jdbc.query(contains("FROM users u"), any(RowMapper.class)))
+                .thenAnswer(inv -> {
+                    RowMapper<?> mapper = inv.getArgument(1);
+                    java.sql.ResultSet rs = mock(java.sql.ResultSet.class);
+                    when(rs.getLong(1)).thenReturn(40L);
+                    when(rs.getString(2)).thenReturn("Jon Bell");
+                    when(rs.getString(3)).thenReturn("jon.bell@northstar.edu");
+                    when(rs.getString(4)).thenReturn("EMPLOYEE");
+                    when(rs.getString(5)).thenReturn("ACTIVE");
+                    when(rs.getString(6)).thenReturn("EMP-1043");
+                    return List.of(mapper.mapRow(rs, 1));
+                });
+        when(jdbc.queryForList(contains("SELECT permission_code FROM manager_permissions"), eq(String.class), eq(40L)))
+                .thenReturn(List.of("VIEW_ASSIGNED_EMPLOYEES", "REVIEW_ASSIGNED_LEAVE"));
+        when(jdbc.queryForObject(contains("COUNT(*) FROM manager_employee_assignments"), eq(Integer.class), eq(40L)))
+                .thenReturn(2);
+
+        List<HrManagementService.ManagerSummaryView> list = hrService.managers();
+
+        assertThat(list).hasSize(1);
+        assertThat(list.get(0).name()).isEqualTo("Jon Bell");
+        assertThat(list.get(0).email()).isEqualTo("jon.bell@northstar.edu");
+        assertThat(list.get(0).assignedCount()).isEqualTo(2);
+        assertThat(list.get(0).permissions()).containsExactly("VIEW_ASSIGNED_EMPLOYEES", "REVIEW_ASSIGNED_LEAVE");
+    }
+
+    @Test
+    void createOrPromoteManagerGrantsPermissionsAndApproves() {
+        mockHrUser(1L, true);
+        when(jdbc.query(contains("SELECT user_id, status FROM users WHERE LOWER(email) = LOWER(?)"),
+                any(RowMapper.class), eq("elena.rostova@northstar.edu")))
+                .thenAnswer(inv -> {
+                    RowMapper<?> mapper = inv.getArgument(1);
+                    java.sql.ResultSet rs = mock(java.sql.ResultSet.class);
+                    when(rs.getLong(1)).thenReturn(80L);
+                    when(rs.getString(2)).thenReturn("ACTIVE");
+                    return List.of(mapper.mapRow(rs, 1));
+                });
+        when(jdbc.queryForList(contains("SELECT request_id FROM manager_access_requests"), eq(Long.class), eq(80L)))
+                .thenReturn(List.of());
+
+        hrService.createOrPromoteManager("Elena Rostova", "elena.rostova@northstar.edu", "Operations", 1L);
+
+        verify(jdbc).update(contains("INSERT INTO manager_access_requests"), eq(80L), eq(1L));
     }
 }

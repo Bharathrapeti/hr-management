@@ -45,6 +45,87 @@ public class HrManagementService {
                         rs.getString(4), rs.getString(5), rs.getString(6)));
     }
 
+    public List<ManagerSummaryView> managers() {
+        try {
+            return jdbc.query("""
+                    SELECT DISTINCT u.user_id, u.name, u.email, u.role, u.status, u.employee_id
+                    FROM users u
+                    JOIN manager_access_requests r ON r.requesting_user_id = u.user_id
+                    WHERE u.role = 'EMPLOYEE' AND r.status = 'APPROVED'
+                    ORDER BY u.name
+                    """, (rs, row) -> {
+                        long mgrId = rs.getLong(1);
+                        List<String> perms = List.of();
+                        try {
+                            perms = permissions(mgrId);
+                        } catch (Exception ignored) {}
+                        int assignedCount = 0;
+                        try {
+                            Integer count = jdbc.queryForObject(
+                                    "SELECT COUNT(*) FROM manager_employee_assignments WHERE manager_user_id = ?",
+                                    Integer.class, mgrId);
+                            assignedCount = count != null ? count : 0;
+                        } catch (Exception ignored) {}
+                        return new ManagerSummaryView(
+                                mgrId,
+                                rs.getString(2),
+                                rs.getString(3),
+                                rs.getString(4),
+                                rs.getString(5),
+                                rs.getString(6),
+                                assignedCount,
+                                perms
+                        );
+                    });
+        } catch (BadSqlGrammarException ex) {
+            return List.of();
+        }
+    }
+
+    @Transactional
+    public void createOrPromoteManager(String name, String email, String department, long actorId) {
+        ensureHr(actorId);
+        if (email == null || email.isBlank()) throw new IllegalArgumentException("Email is required.");
+        String cleanEmail = email.trim().toLowerCase();
+        record ExistingUser(long userId, String status) {}
+        var existing = jdbc.query("SELECT user_id, status FROM users WHERE LOWER(email) = LOWER(?)",
+                (rs, row) -> new ExistingUser(rs.getLong(1), rs.getString(2)), cleanEmail);
+        long userId;
+        if (existing.isEmpty()) {
+            String cleanName = (name != null && !name.isBlank()) ? name.trim() : "Manager";
+            String empId = generateNextEmployeeId();
+            var key = new org.springframework.jdbc.support.GeneratedKeyHolder();
+            jdbc.update(connection -> {
+                var statement = connection.prepareStatement(
+                        "INSERT INTO users (name, email, password_hash, role, status, employee_id) VALUES (?, ?, ?, 'EMPLOYEE', 'ACTIVE', ?)",
+                        java.sql.Statement.RETURN_GENERATED_KEYS);
+                statement.setString(1, cleanName);
+                statement.setString(2, cleanEmail);
+                statement.setString(3, "INVITATION_PENDING");
+                statement.setString(4, empId);
+                return statement;
+            }, key);
+            userId = key.getKey().longValue();
+        } else {
+            userId = existing.getFirst().userId();
+            jdbc.update("UPDATE users SET status = 'ACTIVE' WHERE user_id = ?", userId);
+        }
+
+        var requests = jdbc.queryForList(
+                "SELECT request_id FROM manager_access_requests WHERE requesting_user_id = ? AND status = 'APPROVED'",
+                Long.class, userId);
+        if (requests.isEmpty()) {
+            jdbc.update("INSERT INTO manager_access_requests (requesting_user_id, status, reviewed_by_hr_user_id, reviewed_at, reason) VALUES (?, 'APPROVED', ?, UTC_TIMESTAMP(), 'Promoted directly by HR.')",
+                    userId, actorId);
+        }
+
+        for (String perm : List.of("VIEW_ASSIGNED_EMPLOYEES", "REVIEW_ASSIGNED_LEAVE", "VIEW_ASSIGNED_ATTENDANCE", "UPDATE_ASSIGNED_EMPLOYEE_PROFILE")) {
+            try {
+                grantPermission(userId, perm, actorId);
+            } catch (Exception ignored) {}
+        }
+    }
+
     public UserView user(long userId) {
         var users = jdbc.query("SELECT user_id, name, email, role, status, employee_id FROM users WHERE user_id = ?",
                 (rs, row) -> new UserView(rs.getLong(1), rs.getString(2), rs.getString(3),
@@ -60,7 +141,7 @@ public class HrManagementService {
     public PersonalDetailsView getPersonalDetails(long userId) {
         try {
             var list = jdbc.query(
-                    "SELECT user_id, employee_id, name, email, gender, date_of_birth, residential_address, mobile_number, role, status FROM users WHERE user_id = ?",
+                    "SELECT user_id, employee_id, name, email, gender, date_of_birth, residential_address, mobile_number, role, status, first_name, last_name, job_role, resume_file_name, age FROM users WHERE user_id = ?",
                     (rs, row) -> {
                         String empId = rs.getString(2);
                         if (empId == null || empId.isBlank()) {
@@ -71,7 +152,7 @@ public class HrManagementService {
                         }
                         java.sql.Date dob = rs.getDate(6);
                         LocalDate localDob = dob != null ? dob.toLocalDate() : null;
-                        Integer age = localDob != null ? Period.between(localDob, LocalDate.now()).getYears() : null;
+                        Integer age = rs.getObject(15) != null ? rs.getInt(15) : (localDob != null ? Period.between(localDob, LocalDate.now()).getYears() : null);
                         return new PersonalDetailsView(
                                 rs.getLong(1),
                                 empId,
@@ -83,19 +164,128 @@ public class HrManagementService {
                                 rs.getString(7),
                                 rs.getString(8),
                                 rs.getString(9),
-                                rs.getString(10)
+                                rs.getString(10),
+                                rs.getString(11),
+                                rs.getString(12),
+                                rs.getString(13),
+                                rs.getString(14)
                         );
                     }, userId);
-            if (list.isEmpty()) throw new IllegalArgumentException("User not found.");
-            return list.getFirst();
-        } catch (BadSqlGrammarException ex) {
-            if (isMissingColumnError(ex, "gender")
-                    || isMissingColumnError(ex, "date_of_birth")
-                    || isMissingColumnError(ex, "residential_address")
-                    || isMissingColumnError(ex, "mobile_number")) {
-                return fallbackPersonalDetails(userId);
+            if (!list.isEmpty()) {
+                return list.getFirst();
             }
-            throw ex;
+            var legacy = queryLegacyPersonalDetails(userId);
+            if (!legacy.isEmpty()) {
+                return legacy.getFirst();
+            }
+            throw new IllegalArgumentException("User not found.");
+        } catch (BadSqlGrammarException ex) {
+            try {
+                var legacy = queryLegacyPersonalDetails(userId);
+                if (legacy.isEmpty()) throw new IllegalArgumentException("User not found.");
+                return legacy.getFirst();
+            } catch (BadSqlGrammarException ex2) {
+                if (isMissingColumnError(ex2, "gender")
+                        || isMissingColumnError(ex2, "date_of_birth")
+                        || isMissingColumnError(ex2, "residential_address")
+                        || isMissingColumnError(ex2, "mobile_number")) {
+                    return fallbackPersonalDetails(userId);
+                }
+                throw ex2;
+            }
+        }
+    }
+
+    private List<PersonalDetailsView> queryLegacyPersonalDetails(long userId) {
+        return jdbc.query(
+                "SELECT user_id, employee_id, name, email, gender, date_of_birth, residential_address, mobile_number, role, status FROM users WHERE user_id = ?",
+                (rs, row) -> {
+                    String empId = rs.getString(2);
+                    if (empId == null || empId.isBlank()) {
+                        empId = generateNextEmployeeId();
+                        try {
+                            jdbc.update("UPDATE users SET employee_id = ? WHERE user_id = ? AND (employee_id IS NULL OR employee_id = '')", empId, rs.getLong(1));
+                        } catch (Exception ignored) {}
+                    }
+                    java.sql.Date dob = rs.getDate(6);
+                    LocalDate localDob = dob != null ? dob.toLocalDate() : null;
+                    Integer age = localDob != null ? Period.between(localDob, LocalDate.now()).getYears() : null;
+                    return new PersonalDetailsView(
+                            rs.getLong(1),
+                            empId,
+                            rs.getString(3),
+                            rs.getString(4),
+                            rs.getString(5),
+                            localDob,
+                            age,
+                            rs.getString(7),
+                            rs.getString(8),
+                            rs.getString(9),
+                            rs.getString(10)
+                    );
+                }, userId);
+    }
+
+    public record UserResume(String fileName, String contentType, byte[] data) {}
+
+    public UserResume getUserResume(String identifier) {
+        if (identifier == null || identifier.isBlank()) return null;
+        String trimmed = identifier.trim();
+        Long userId = null;
+        try {
+            long parsedId = Long.parseLong(trimmed);
+            var found = jdbc.query("SELECT user_id FROM users WHERE user_id = ?", (rs, row) -> rs.getLong(1), parsedId);
+            if (!found.isEmpty()) {
+                userId = found.getFirst();
+            } else {
+                var foundFromRequest = jdbc.query("SELECT requesting_user_id FROM manager_access_requests WHERE request_id = ?",
+                        (rs, row) -> rs.getLong(1), parsedId);
+                if (!foundFromRequest.isEmpty()) {
+                    userId = foundFromRequest.getFirst();
+                }
+            }
+        } catch (NumberFormatException ignored) {}
+
+        if (userId == null) {
+            var foundByEmpId = jdbc.query("SELECT user_id FROM users WHERE employee_id = ?",
+                    (rs, row) -> rs.getLong(1), trimmed);
+            if (!foundByEmpId.isEmpty()) {
+                userId = foundByEmpId.getFirst();
+            } else {
+                var foundByEmail = jdbc.query("SELECT user_id FROM users WHERE LOWER(email) = LOWER(?)",
+                        (rs, row) -> rs.getLong(1), trimmed);
+                if (!foundByEmail.isEmpty()) {
+                    userId = foundByEmail.getFirst();
+                }
+            }
+        }
+
+        if (userId == null) return null;
+
+        try {
+            var list = jdbc.query(
+                    "SELECT resume_file_name, resume_content_type, resume_data FROM users WHERE user_id = ?",
+                    (rs, row) -> {
+                        String name = rs.getString(1);
+                        String type = rs.getString(2);
+                        String rawData = rs.getString(3);
+                        if (rawData == null || rawData.isBlank()) return null;
+                        byte[] bytes;
+                        if (rawData.contains(",")) {
+                            String base64 = rawData.substring(rawData.indexOf(",") + 1);
+                            bytes = java.util.Base64.getDecoder().decode(base64);
+                        } else {
+                            try {
+                                bytes = java.util.Base64.getDecoder().decode(rawData);
+                            } catch (Exception e) {
+                                bytes = rawData.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                            }
+                        }
+                        return new UserResume(name, type, bytes);
+                    }, userId);
+            return list.isEmpty() ? null : list.getFirst();
+        } catch (Exception ex) {
+            return null;
         }
     }
 
@@ -246,7 +436,8 @@ public class HrManagementService {
                                WHEN m.status <> 'ACTIVE' THEN TRUE
                                WHEN (SELECT COUNT(*) FROM manager_access_requests mar WHERE mar.requesting_user_id = u.assigned_manager_user_id AND mar.status = 'APPROVED') = 0 THEN TRUE
                                ELSE FALSE
-                           END AS needs_hr_review
+                           END AS needs_hr_review,
+                           u.first_name, u.last_name, u.job_role, u.age, u.gender, u.resume_file_name
                     FROM users u
                     LEFT JOIN users r ON r.user_id = u.reviewed_by_hr_user_id
                     LEFT JOIN users m ON m.user_id = u.assigned_manager_user_id
@@ -269,14 +460,72 @@ public class HrManagementService {
                             rs.getString(11),
                             rs.getObject(12) != null ? rs.getLong(12) : null,
                             rs.getString(13),
-                            rs.getBoolean(14)
+                            rs.getBoolean(14),
+                            rs.getString(15),
+                            rs.getString(16),
+                            rs.getString(17),
+                            rs.getObject(18) != null ? rs.getInt(18) : null,
+                            rs.getString(19),
+                            rs.getString(20)
                     ));
         } catch (BadSqlGrammarException ex) {
-            if (isMissingColumnError(ex, "assigned_manager_user_id")) {
+            if (isMissingColumnError(ex, "first_name")
+                    || isMissingColumnError(ex, "last_name")
+                    || isMissingColumnError(ex, "job_role")
+                    || isMissingColumnError(ex, "age")
+                    || isMissingColumnError(ex, "gender")
+                    || isMissingColumnError(ex, "resume_file_name")) {
+                try {
+                    return fallbackRegistrationsWithAssignedManager();
+                } catch (BadSqlGrammarException ex2) {
+                    if (isMissingColumnError(ex2, "assigned_manager_user_id")) {
+                        return fallbackRegistrations();
+                    }
+                    throw ex2;
+                }
+            } else if (isMissingColumnError(ex, "assigned_manager_user_id")) {
                 return fallbackRegistrations();
             }
             throw ex;
         }
+    }
+
+    private List<RegistrationView> fallbackRegistrationsWithAssignedManager() {
+        return jdbc.query("""
+                SELECT u.user_id, u.name, u.email, u.role, u.status, u.created_at, u.email_verified_at,
+                       u.reviewed_by_hr_user_id, r.name, u.reviewed_at, u.review_reason,
+                       u.assigned_manager_user_id, m.name,
+                       CASE
+                           WHEN u.status <> 'PENDING_APPROVAL' THEN FALSE
+                           WHEN u.assigned_manager_user_id IS NULL THEN TRUE
+                           WHEN m.status <> 'ACTIVE' THEN TRUE
+                           WHEN (SELECT COUNT(*) FROM manager_access_requests mar WHERE mar.requesting_user_id = u.assigned_manager_user_id AND mar.status = 'APPROVED') = 0 THEN TRUE
+                           ELSE FALSE
+                       END AS needs_hr_review
+                FROM users u
+                LEFT JOIN users r ON r.user_id = u.reviewed_by_hr_user_id
+                LEFT JOIN users m ON m.user_id = u.assigned_manager_user_id
+                WHERE u.role = 'EMPLOYEE' AND (u.review_reason IS NULL OR u.review_reason NOT LIKE 'MANAGER%')
+                ORDER BY
+                    CASE WHEN u.status = 'PENDING_APPROVAL' THEN 1 ELSE 2 END,
+                    u.created_at DESC
+                """,
+                (rs, row) -> new RegistrationView(
+                        rs.getLong(1),
+                        rs.getString(2),
+                        rs.getString(3),
+                        rs.getString(4),
+                        rs.getString(5),
+                        rs.getTimestamp(6) != null ? rs.getTimestamp(6).toInstant() : null,
+                        rs.getTimestamp(7) != null ? rs.getTimestamp(7).toInstant() : null,
+                        rs.getObject(8) != null ? rs.getLong(8) : null,
+                        rs.getString(9),
+                        rs.getTimestamp(10) != null ? rs.getTimestamp(10).toInstant() : null,
+                        rs.getString(11),
+                        rs.getObject(12) != null ? rs.getLong(12) : null,
+                        rs.getString(13),
+                        rs.getBoolean(14)
+                ));
     }
 
     private List<RegistrationView> fallbackRegistrations() {
@@ -645,29 +894,78 @@ public class HrManagementService {
         executePermanentUserDeletion(userId, email);
     }
 
+    private record ResolvedUser(long userId, String email, String role) {}
+
     @Transactional
-    public void deleteUserByHr(long userId, long actorId, String confirmation) {
+    public void deleteUserByHr(String identifier, long actorId, String confirmation) {
         ensureHr(actorId);
         if (!"Delete".equals(confirmation)) {
             throw new IllegalArgumentException("Confirmation word 'Delete' must match exactly.");
         }
-        var users = jdbc.query("SELECT email, role FROM users WHERE user_id = ?",
-                (rs, row) -> new String[]{rs.getString(1), rs.getString(2)}, userId);
-        if (users.isEmpty()) throw new IllegalArgumentException("User not found.");
-        String[] userRow = users.getFirst();
-        String email = userRow[0];
-        String role = userRow[1];
+        if (identifier == null || identifier.isBlank()) {
+            throw new IllegalArgumentException("User identifier is required.");
+        }
+        String trimmed = identifier.trim();
 
-        if ("HR_ADMIN".equals(role)) {
-            Integer lastHr = jdbc.queryForObject(
-                    "SELECT COUNT(*) FROM users WHERE role = 'HR_ADMIN' AND status = 'ACTIVE' AND user_id <> ?",
-                    Integer.class, userId);
-            if (lastHr == null || lastHr == 0) {
-                throw new IllegalArgumentException("The last active HR account cannot be deleted.");
+        ResolvedUser resolvedUser = null;
+
+        // 1. Resolve user ID: try numeric user_id
+        try {
+            long parsedId = Long.parseLong(trimmed);
+            var found = jdbc.query("SELECT user_id, email, role FROM users WHERE user_id = ?",
+                    (rs, row) -> new ResolvedUser(rs.getLong(1), rs.getString(2), rs.getString(3)), parsedId);
+            if (!found.isEmpty()) {
+                resolvedUser = found.getFirst();
+            } else {
+                // If not matched as user_id, check if numeric identifier matches manager_access_requests request_id
+                var foundFromRequest = jdbc.query("SELECT requesting_user_id FROM manager_access_requests WHERE request_id = ?",
+                        (rs, row) -> rs.getLong(1), parsedId);
+                if (!foundFromRequest.isEmpty()) {
+                    long reqUserId = foundFromRequest.getFirst();
+                    var userFound = jdbc.query("SELECT user_id, email, role FROM users WHERE user_id = ?",
+                            (rs, row) -> new ResolvedUser(rs.getLong(1), rs.getString(2), rs.getString(3)), reqUserId);
+                    if (!userFound.isEmpty()) {
+                        resolvedUser = userFound.getFirst();
+                    }
+                }
+            }
+        } catch (NumberFormatException ignored) {}
+
+        // 2. Try employee_id (e.g. "EMP-1042")
+        if (resolvedUser == null) {
+            var found = jdbc.query("SELECT user_id, email, role FROM users WHERE employee_id = ?",
+                    (rs, row) -> new ResolvedUser(rs.getLong(1), rs.getString(2), rs.getString(3)), trimmed);
+            if (!found.isEmpty()) {
+                resolvedUser = found.getFirst();
             }
         }
 
-        executePermanentUserDeletion(userId, email);
+        // 3. Try email (case-insensitive)
+        if (resolvedUser == null) {
+            var found = jdbc.query("SELECT user_id, email, role FROM users WHERE LOWER(email) = LOWER(?)",
+                    (rs, row) -> new ResolvedUser(rs.getLong(1), rs.getString(2), rs.getString(3)), trimmed);
+            if (!found.isEmpty()) {
+                resolvedUser = found.getFirst();
+            }
+        }
+
+        // 4. If user is found in the database, execute permanent deletion
+        if (resolvedUser != null) {
+            if ("HR_ADMIN".equals(resolvedUser.role())) {
+                Integer lastHr = jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM users WHERE role = 'HR_ADMIN' AND status = 'ACTIVE' AND user_id <> ?",
+                        Integer.class, resolvedUser.userId());
+                if (lastHr == null || lastHr == 0) {
+                    throw new IllegalArgumentException("The last active HR account cannot be deleted.");
+                }
+            }
+            executePermanentUserDeletion(resolvedUser.userId(), resolvedUser.email());
+        }
+    }
+
+    @Transactional
+    public void deleteUserByHr(long userId, long actorId, String confirmation) {
+        deleteUserByHr(String.valueOf(userId), actorId, confirmation);
     }
 
     private void executePermanentUserDeletion(long userId, String email) {
@@ -789,7 +1087,26 @@ public class HrManagementService {
     }
 
     public record UserView(long id, String name, String email, String role, String status, String employeeId) {}
-    public record RegistrationView(long id, String name, String email, String role, String status, Instant createdAt, Instant emailVerifiedAt, Long reviewedByHrUserId, String reviewerName, Instant reviewedAt, String reviewReason, Long assignedManagerUserId, String assignedManagerName, boolean needsHrReview) {}
-    public record PersonalDetailsView(long userId, String employeeId, String name, String email, String gender, LocalDate dateOfBirth, Integer age, String residentialAddress, String mobileNumber, String role, String status) {}
+    public record ManagerSummaryView(long id, String name, String email, String role, String status, String employeeId, int assignedCount, List<String> permissions) {}
+    public record RegistrationView(
+            long id, String name, String email, String role, String status, Instant createdAt, Instant emailVerifiedAt,
+            Long reviewedByHrUserId, String reviewerName, Instant reviewedAt, String reviewReason,
+            Long assignedManagerUserId, String assignedManagerName, boolean needsHrReview,
+            String firstName, String lastName, String jobRole, Integer age, String gender, String resumeFileName) {
+        public RegistrationView(long id, String name, String email, String role, String status, Instant createdAt, Instant emailVerifiedAt,
+                Long reviewedByHrUserId, String reviewerName, Instant reviewedAt, String reviewReason,
+                Long assignedManagerUserId, String assignedManagerName, boolean needsHrReview) {
+            this(id, name, email, role, status, createdAt, emailVerifiedAt, reviewedByHrUserId, reviewerName, reviewedAt, reviewReason, assignedManagerUserId, assignedManagerName, needsHrReview, null, null, null, null, null, null);
+        }
+    }
+    public record PersonalDetailsView(
+            long userId, String employeeId, String name, String email, String gender, LocalDate dateOfBirth,
+            Integer age, String residentialAddress, String mobileNumber, String role, String status,
+            String firstName, String lastName, String jobRole, String resumeFileName) {
+        public PersonalDetailsView(long userId, String employeeId, String name, String email, String gender, LocalDate dateOfBirth,
+                Integer age, String residentialAddress, String mobileNumber, String role, String status) {
+            this(userId, employeeId, name, email, gender, dateOfBirth, age, residentialAddress, mobileNumber, role, status, null, null, null, null);
+        }
+    }
     public record CorrectionRequestView(long requestId, long employeeUserId, String employeeName, String employeeEmail, String requestedChanges, String status, Instant createdAt, Long resolvedByHrUserId, String resolverName, Instant resolvedAt, String resolutionNote) {}
 }

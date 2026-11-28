@@ -11,6 +11,8 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
 import java.util.List;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -26,11 +28,37 @@ public class HrManagementController {
     @GetMapping("/users")
     public List<HrManagementService.UserView> users() { return service.users(); }
 
+    @GetMapping("/managers")
+    public List<HrManagementService.ManagerSummaryView> managers() { return service.managers(); }
+
+    @PostMapping("/managers")
+    public Message createManager(@Valid @RequestBody CreateManagerRequest request, Authentication authentication) {
+        service.createOrPromoteManager(request.name(), request.email(), request.department(), user(authentication).id());
+        return new Message("Manager profile configured.");
+    }
+
     @GetMapping("/eligible-managers")
     public List<HrManagementService.UserView> eligibleManagers() { return service.eligibleManagers(); }
 
     @GetMapping("/users/{id}")
     public HrManagementService.UserView user(@PathVariable long id) { return service.user(id); }
+
+    @GetMapping({"/users/{id}/resume", "/employees/{id}/resume"})
+    public ResponseEntity<byte[]> getUserResume(@PathVariable String id) {
+        var resume = service.getUserResume(id);
+        if (resume == null || resume.data() == null) {
+            return ResponseEntity.notFound().build();
+        }
+        String contentType = resume.contentType() != null && !resume.contentType().isBlank()
+                ? resume.contentType() : "application/pdf";
+        String fileName = resume.fileName() != null && !resume.fileName().isBlank()
+                ? resume.fileName() : "resume.pdf";
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_TYPE, contentType)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + fileName + "\"")
+                .body(resume.data());
+    }
 
     @GetMapping("/employee-registrations")
     public List<HrManagementService.RegistrationView> registrations() {
@@ -167,29 +195,30 @@ public class HrManagementController {
     }
 
     @PostMapping("/users/{id}/delete")
-    public Message deleteUser(@PathVariable long id, @RequestBody(required = false) DeleteAccountRequest request, Authentication authentication) {
+    public Message deleteUser(@PathVariable String id, @RequestBody(required = false) DeleteAccountRequest request, Authentication authentication) {
         String confirmation = request != null ? request.confirmation() : null;
         service.deleteUserByHr(id, user(authentication).id(), confirmation);
         return new Message("User account permanently deleted.");
     }
 
     @DeleteMapping("/users/{id}")
-    public Message deleteUserViaDelete(@PathVariable long id, @RequestBody(required = false) DeleteAccountRequest request, Authentication authentication) {
+    public Message deleteUserViaDelete(@PathVariable String id, @RequestBody(required = false) DeleteAccountRequest request, Authentication authentication) {
         return deleteUser(id, request, authentication);
     }
 
     @PostMapping("/employees/{id}/delete")
-    public Message deleteEmployee(@PathVariable long id, @RequestBody(required = false) DeleteAccountRequest request, Authentication authentication) {
+    public Message deleteEmployee(@PathVariable String id, @RequestBody(required = false) DeleteAccountRequest request, Authentication authentication) {
         return deleteUser(id, request, authentication);
     }
 
     @DeleteMapping("/employees/{id}")
-    public Message deleteEmployeeViaDelete(@PathVariable long id, @RequestBody(required = false) DeleteAccountRequest request, Authentication authentication) {
+    public Message deleteEmployeeViaDelete(@PathVariable String id, @RequestBody(required = false) DeleteAccountRequest request, Authentication authentication) {
         return deleteUser(id, request, authentication);
     }
 
     private AuthUser user(Authentication authentication) { return (AuthUser) authentication.getPrincipal(); }
     public record DeleteAccountRequest(String confirmation) {}
+    public record CreateManagerRequest(@NotBlank @Size(max = 160) String name, @NotBlank @Email @Size(max = 320) String email, String department) {}
     public record CreateEmployee(@NotBlank @Size(max = 160) String name, @NotBlank @Email @Size(max = 320) String email) {}
     public record ProfileUpdate(@NotBlank @Size(max = 160) String name, @Size(max = 64) String employeeId) {}
     public record Decision(@Size(max = 500) String reason) {}

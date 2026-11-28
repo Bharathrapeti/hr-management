@@ -9,6 +9,8 @@ import jakarta.validation.constraints.Size;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -25,7 +27,14 @@ public class AuthController {
 
     @PostMapping("/signup")
     public Message signup(@Valid @RequestBody SignupRequest request) {
-        if (request.accountType() != null && !request.accountType().isBlank() && !"EMPLOYEE".equalsIgnoreCase(request.accountType())) {
+        if (request.confirmPassword() != null && !request.confirmPassword().isBlank()
+                && !request.password().equals(request.confirmPassword())) {
+            throw new IllegalArgumentException("Passwords do not match.");
+        }
+        if (request.firstName() != null || request.jobRole() != null || request.resumeFileName() != null
+                || request.age() != null || request.gender() != null) {
+            authService.signup(request);
+        } else if (request.accountType() != null && !request.accountType().isBlank() && !"EMPLOYEE".equalsIgnoreCase(request.accountType())) {
             authService.signup(request.name(), request.email(), request.password(), request.accountType());
         } else {
             authService.signup(request.name(), request.email(), request.password());
@@ -99,13 +108,83 @@ public class AuthController {
         return new Message("Password reset successfully.");
     }
 
+    @GetMapping("/users/{id}/resume")
+    public ResponseEntity<byte[]> getResume(@PathVariable long id, Authentication authentication) {
+        AuthUser currentUser = authentication != null && authentication.getPrincipal() instanceof AuthUser au ? au : null;
+        if (currentUser == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        boolean isHr = "HR_ADMIN".equalsIgnoreCase(currentUser.role());
+        boolean isSelf = currentUser.id() == id;
+        if (!isHr && !isSelf) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        var fileData = authService.getUserResume(id);
+        if (fileData == null || fileData.data() == null) {
+            return ResponseEntity.notFound().build();
+        }
+        String contentType = fileData.contentType() != null && !fileData.contentType().isBlank()
+                ? fileData.contentType() : "application/pdf";
+        String fileName = fileData.fileName() != null && !fileData.fileName().isBlank()
+                ? fileData.fileName() : "resume.pdf";
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_TYPE, contentType)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + fileName + "\"")
+                .body(fileData.data());
+    }
+
+    @GetMapping("/users/{id}/resume-info")
+    public ResponseEntity<ResumeInfo> getResumeInfo(@PathVariable long id, Authentication authentication) {
+        AuthUser currentUser = authentication != null && authentication.getPrincipal() instanceof AuthUser au ? au : null;
+        if (currentUser == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        boolean isHr = "HR_ADMIN".equalsIgnoreCase(currentUser.role());
+        boolean isSelf = currentUser.id() == id;
+        if (!isHr && !isSelf) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        var info = authService.getUserResumeInfo(id);
+        if (info == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(info);
+    }
+
     public record SignupRequest(
-            @NotBlank @Size(max = 160) String name,
+            String name,
+            String firstName,
+            String lastName,
             @NotBlank @Email @Size(max = 320) String email,
             @NotBlank @Size(min = 8, max = 128) String password,
-            String accountType) {
+            String confirmPassword,
+            String accountType,
+            String jobRole,
+            Integer age,
+            String gender,
+            String resumeFileName,
+            String resumeContentType,
+            Long resumeFileSize,
+            String resumeData) {
+        public SignupRequest(String name, String email, String password, String accountType) {
+            this(name, null, null, email, password, null, accountType, null, null, null, null, null, null, null);
+        }
+
         public SignupRequest(String name, String email, String password) {
             this(name, email, password, null);
+        }
+
+        private static String splitFirst(String name) {
+            if (name == null || name.isBlank()) return null;
+            String[] parts = name.trim().split("\\s+", 2);
+            return parts[0];
+        }
+
+        private static String splitLast(String name) {
+            if (name == null || name.isBlank()) return null;
+            String[] parts = name.trim().split("\\s+", 2);
+            return parts.length > 1 ? parts[1] : parts[0];
         }
     }
 
@@ -137,12 +216,20 @@ public class AuthController {
     }
 
     public record LoginResponse(long id, String name, String email, String role,
-            java.util.List<String> effectiveRoles, java.util.List<String> permissions, String employeeId) {
+            java.util.List<String> effectiveRoles, java.util.List<String> permissions, String employeeId,
+            String firstName, String lastName, String jobRole, Integer age, String gender, String resumeFileName) {
+        public LoginResponse(long id, String name, String email, String role,
+                java.util.List<String> effectiveRoles, java.util.List<String> permissions, String employeeId) {
+            this(id, name, email, role, effectiveRoles, permissions, employeeId, null, null, null, null, null, null);
+        }
+
         public LoginResponse(long id, String name, String email, String role,
                 java.util.List<String> effectiveRoles, java.util.List<String> permissions) {
-            this(id, name, email, role, effectiveRoles, permissions, null);
+            this(id, name, email, role, effectiveRoles, permissions, null, null, null, null, null, null, null);
         }
     }
+
+    public record ResumeInfo(String fileName, String contentType, Long fileSize, boolean hasResume) {}
 
     public record Message(String message) {
     }
